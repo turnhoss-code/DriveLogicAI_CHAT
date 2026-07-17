@@ -1,0 +1,67 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile data",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "createdAt": { "type": "number", "description": "Server timestamp" },
+        "updatedAt": { "type": "number", "description": "Server timestamp" }
+      },
+      "required": ["email", "createdAt", "updatedAt"]
+    },
+    "Trip": {
+      "title": "Trip",
+      "description": "Recorded driving trip",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "startTime": { "type": "number" },
+        "endTime": { "type": "number" },
+        "distance": { "type": "number" },
+        "events": {
+          "type": "array",
+          "items": { "type": "object" }
+        },
+        "sensorData": {
+          "type": "array",
+          "items": { "type": "object" }
+        },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["userId", "startTime", "createdAt"]
+    },
+    "MaintenanceTask": {
+      "title": "MaintenanceTask",
+      "description": "Maintenance task for a user's vehicle",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string" },
+        "intervalMiles": { "type": "number" },
+        "intervalMonths": { "type": "number" },
+        "lastCompletedMiles": { "type": "number" },
+        "lastCompletedDate": { "type": "number" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["userId", "name", "type", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles"
+    },
+    "trips/{tripId}": {
+      "schema": { "$ref": "#/entities/Trip" },
+      "description": "Vehicle trips"
+    },
+    "maintenance_tasks/{taskId}": {
+      "schema": { "$ref": "#/entities/MaintenanceTask" },
+      "description": "Vehicle maintenance tasks"
+    }
+  }
+}
