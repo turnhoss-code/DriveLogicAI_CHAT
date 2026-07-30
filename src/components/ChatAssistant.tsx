@@ -158,7 +158,7 @@ const ChatAssistant = forwardRef<ChatAssistantHandle, ChatAssistantProps>(({
       return;
     }
 
-    const userMsg: Message = { id: Date.now().toString(), text, sender: 'user', timestamp: Date.now() };
+    const userMsg: Message = { id: crypto.randomUUID(), text, sender: 'user', timestamp: Date.now() };
     const currentMessages = [...messages];
     setMessages(prev => [...prev, userMsg]);
     setInput('');
@@ -240,7 +240,7 @@ const ChatAssistant = forwardRef<ChatAssistantHandle, ChatAssistantProps>(({
     }
 
     const aiMsg: Message = { 
-      id: (Date.now() + 1).toString(), 
+      id: crypto.randomUUID(), 
       text: executedCall ? (speakPhrase || "ok") : (result.text || "Command executed successfully."), 
       sender: 'ai', 
       timestamp: Date.now() 
@@ -393,7 +393,7 @@ const ChatAssistant = forwardRef<ChatAssistantHandle, ChatAssistantProps>(({
     try {
       recognition.start();
     } catch (e) {
-      console.error("Failed to start speech recognition:", e);
+      console.warn("Failed to start speech recognition:", e);
       setIsListening(false);
       isListeningRef.current = false;
       isStartingRef.current = false;

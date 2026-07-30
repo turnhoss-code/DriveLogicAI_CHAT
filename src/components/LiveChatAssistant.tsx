@@ -323,7 +323,7 @@ export default function LiveChatAssistant({
       };
 
     } catch (err: any) {
-      console.error(err);
+      console.warn("Live chat mic access denied:", err);
       setError("Mic permission denied or unavailable.");
       setActiveSpeechState('idle');
     }
@@ -354,10 +354,8 @@ export default function LiveChatAssistant({
   };
 
   useEffect(() => {
-    if (!autoStartAttemptedRef.current) {
-      autoStartAttemptedRef.current = true;
-      startLive();
-    }
+    // Disabled auto-start to prevent "Permission denied" on mount without user gesture
+    // User must click the microphone button to start
     return () => {
       stopLive();
     };

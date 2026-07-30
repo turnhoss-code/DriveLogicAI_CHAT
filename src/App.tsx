@@ -475,7 +475,7 @@ export default function App() {
           console.warn("Device motion permission not granted.");
         }
       } catch (err) {
-        console.error("Device motion permission error:", err);
+        console.warn("Device motion permission error:", err);
       }
     }
 
@@ -628,7 +628,7 @@ export default function App() {
     } catch (error) {
       setConnectionStatus('disconnected');
       const message = error instanceof Error ? error.message : "An unexpected Bluetooth error occurred.";
-      console.error("Bluetooth Error:", message);
+      console.warn("Bluetooth Error:", message);
       throw new Error(message);
     }
   };
@@ -756,7 +756,7 @@ export default function App() {
     } catch (error) {
       setConnectionStatus('disconnected');
       const message = error instanceof Error ? error.message : "An unexpected Serial error occurred.";
-      console.error("Serial Error:", message);
+      console.warn("Serial Error:", message);
       throw new Error(message);
     }
   };
@@ -809,7 +809,7 @@ export default function App() {
           }
         }
       } catch (error) {
-        console.error("Serial read error:", error);
+        console.warn("Serial read error:", error);
       } finally {
         reader.releaseLock();
       }

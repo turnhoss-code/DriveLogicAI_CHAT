@@ -240,7 +240,7 @@ export default function GPSTab({ isRecording, trips, navigation, setNavigation, 
     
     recognition.onerror = (event: any) => {
       if (event.error !== 'aborted' && event.error !== 'no-speech') {
-        console.error('Speech recognition error', event.error);
+        console.warn('Speech recognition error', event.error);
       }
       
       if (event.error === 'not-allowed') {
@@ -263,7 +263,7 @@ export default function GPSTab({ isRecording, trips, navigation, setNavigation, 
         try {
           recognitionRef.current.start();
         } catch (e) {
-          console.error("Failed to restart recognition", e);
+          console.warn("Failed to restart recognition", e);
         }
       } else {
         setIsListening(false);
@@ -274,7 +274,7 @@ export default function GPSTab({ isRecording, trips, navigation, setNavigation, 
     try {
       recognition.start();
     } catch (e) {
-      console.error("Failed to start recognition", e);
+      console.warn("Failed to start recognition", e);
     }
   };
 
@@ -352,7 +352,7 @@ export default function GPSTab({ isRecording, trips, navigation, setNavigation, 
 
   useEffect(() => {
     if (!navigator.geolocation) {
-      console.error("Geolocation is not supported by this browser.");
+      console.warn("Geolocation is not supported by this browser.");
       return;
     }
 
