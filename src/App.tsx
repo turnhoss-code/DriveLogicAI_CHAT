@@ -177,7 +177,7 @@ export default function App() {
         await signInWithEmailAndPassword(auth, email, password);
       }
     } catch (error: any) {
-      console.error("Auth action failed", error);
+      console.warn("Auth action failed", error);
       let errMsg = error.message;
       if (error.code === 'auth/weak-password') {
         errMsg = "Password should be at least 6 characters.";
@@ -185,6 +185,8 @@ export default function App() {
         errMsg = "This email is already in use.";
       } else if (error.code === 'auth/invalid-credential') {
         errMsg = "Invalid email or password.";
+      } else if (error.code === 'auth/operation-not-allowed') {
+        errMsg = "Email/Password sign-in is not enabled. Please enable it in the Firebase Console -> Authentication -> Sign-in method.";
       }
       setLoginError(errMsg);
     } finally {
@@ -976,9 +978,11 @@ export default function App() {
       setLoginError(null);
       await signInWithPopup(auth, googleProvider);
     } catch (error: any) {
-      console.error("Login failed", error);
+      console.warn("Login failed", error);
       if (error?.code === 'auth/cancelled-popup-request' || error?.code === 'auth/popup-blocked' || error?.message?.includes('INTERNAL ASSERTION FAILED') || error?.message?.includes('popup-blocked')) {
         setLoginError("Login failed due to browser popup restrictions inside the preview window. Please open this app in a new tab to authenticate successfully.");
+      } else if (error?.code === 'auth/operation-not-allowed') {
+        setLoginError("Google sign-in is not enabled. Please enable it in the Firebase Console -> Authentication -> Sign-in method.");
       } else {
         setLoginError(`Login failed: ${error?.message || error}`);
       }
