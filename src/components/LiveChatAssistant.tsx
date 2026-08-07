@@ -207,7 +207,7 @@ export default function LiveChatAssistant({
       ws.onopen = () => {
         setIsLive(true);
         setActiveSpeechState('listening');
-        ws.send(JSON.stringify({ text: "Please provide a short, friendly verbal greeting as the AI assistant for DriveLogic." }));
+        ws.send(JSON.stringify({ text: "Please provide a short verbal greeting that says exactly: 'Hi, im drive-logic, your onboard ai assistant. what journey should we begin?'" }));
       };
 
       ws.onmessage = (event) => {
@@ -323,7 +323,7 @@ export default function LiveChatAssistant({
       };
 
     } catch (err: any) {
-      console.warn("Live chat mic access denied:", err);
+      console.error(err);
       setError("Mic permission denied or unavailable.");
       setActiveSpeechState('idle');
     }
@@ -354,12 +354,15 @@ export default function LiveChatAssistant({
   };
 
   useEffect(() => {
-    // Disabled auto-start to prevent "Permission denied" on mount without user gesture
-    // User must click the microphone button to start
-    return () => {
+    if (isOpen) {
+      if (!isLive && activeSpeechState === 'idle') {
+        startLive();
+      }
+    } else {
       stopLive();
-    };
-  }, []);
+      setError(null);
+    }
+  }, [isOpen, isLive, activeSpeechState]);
 
   // Compute clean readable labels for status
   const getStatusLabel = () => {

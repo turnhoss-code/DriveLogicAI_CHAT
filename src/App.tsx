@@ -177,7 +177,7 @@ export default function App() {
         await signInWithEmailAndPassword(auth, email, password);
       }
     } catch (error: any) {
-      console.warn("Auth action failed", error);
+      console.error("Auth action failed", error);
       let errMsg = error.message;
       if (error.code === 'auth/weak-password') {
         errMsg = "Password should be at least 6 characters.";
@@ -185,8 +185,8 @@ export default function App() {
         errMsg = "This email is already in use.";
       } else if (error.code === 'auth/invalid-credential') {
         errMsg = "Invalid email or password.";
-      } else if (error.code === 'auth/operation-not-allowed') {
-        errMsg = "Email/Password sign-in is not enabled. Please enable it in the Firebase Console -> Authentication -> Sign-in method.";
+      } else if (error.code === 'auth/network-request-failed') {
+        errMsg = "Network request failed. This may be due to ad blockers or running inside the preview iframe. Please open the app in a new tab.";
       }
       setLoginError(errMsg);
     } finally {
@@ -468,19 +468,7 @@ export default function App() {
     localStorage.setItem('ztcd_maintenance', JSON.stringify(maintenanceTasks));
   }, [maintenanceTasks]);
 
-  const startTrip = async () => {
-    // Request device motion permission on iOS 13+
-    if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
-      try {
-        const response = await (DeviceMotionEvent as any).requestPermission();
-        if (response !== 'granted') {
-          console.warn("Device motion permission not granted.");
-        }
-      } catch (err) {
-        console.warn("Device motion permission error:", err);
-      }
-    }
-
+  const startTrip = () => {
     setIsRecording(true);
     setCurrentTrip({
       id: Math.random().toString(36).substr(2, 9),
@@ -546,7 +534,18 @@ export default function App() {
     };
 
     if (window.DeviceMotionEvent) {
-      window.addEventListener('devicemotion', handleMotion);
+      // Request permission for iOS 13+
+      if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
+        (DeviceMotionEvent as any).requestPermission()
+          .then((response: string) => {
+            if (response === 'granted') {
+              window.addEventListener('devicemotion', handleMotion);
+            }
+          })
+          .catch(console.error);
+      } else {
+        window.addEventListener('devicemotion', handleMotion);
+      }
     }
 
     return () => {
@@ -630,7 +629,7 @@ export default function App() {
     } catch (error) {
       setConnectionStatus('disconnected');
       const message = error instanceof Error ? error.message : "An unexpected Bluetooth error occurred.";
-      console.warn("Bluetooth Error:", message);
+      console.error("Bluetooth Error:", message);
       throw new Error(message);
     }
   };
@@ -758,7 +757,7 @@ export default function App() {
     } catch (error) {
       setConnectionStatus('disconnected');
       const message = error instanceof Error ? error.message : "An unexpected Serial error occurred.";
-      console.warn("Serial Error:", message);
+      console.error("Serial Error:", message);
       throw new Error(message);
     }
   };
@@ -811,7 +810,7 @@ export default function App() {
           }
         }
       } catch (error) {
-        console.warn("Serial read error:", error);
+        console.error("Serial read error:", error);
       } finally {
         reader.releaseLock();
       }
@@ -978,11 +977,11 @@ export default function App() {
       setLoginError(null);
       await signInWithPopup(auth, googleProvider);
     } catch (error: any) {
-      console.warn("Login failed", error);
+      console.error("Login failed", error);
       if (error?.code === 'auth/cancelled-popup-request' || error?.code === 'auth/popup-blocked' || error?.message?.includes('INTERNAL ASSERTION FAILED') || error?.message?.includes('popup-blocked')) {
         setLoginError("Login failed due to browser popup restrictions inside the preview window. Please open this app in a new tab to authenticate successfully.");
-      } else if (error?.code === 'auth/operation-not-allowed') {
-        setLoginError("Google sign-in is not enabled. Please enable it in the Firebase Console -> Authentication -> Sign-in method.");
+      } else if (error?.code === 'auth/network-request-failed') {
+        setLoginError("Network request failed. This may be due to ad blockers or running inside the preview iframe. Please open the app in a new tab.");
       } else {
         setLoginError(`Login failed: ${error?.message || error}`);
       }

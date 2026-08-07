@@ -30,6 +30,8 @@ export interface ChatAssistantHandle {
   toggleMic: () => void;
 }
 
+let persistentMicStream: MediaStream | null = null;
+
 const cleanTextForSpeech = (text: string): string => {
   if (!text) return '';
   
@@ -84,7 +86,7 @@ const ChatAssistant = forwardRef<ChatAssistantHandle, ChatAssistantProps>(({
   const [isMini, setIsMini] = useState(false);
   const [size, setSize] = useState({ width: 320, height: 450 });
   const [messages, setMessages] = useState<Message[]>([
-    { id: '1', text: "Hello! I'm your DriveLogic AI Co-Pilot. How can I help you today?", sender: 'ai', timestamp: Date.now() }
+    { id: '1', text: "Hi, im drive-logic, your onboard ai assistant. what journey should we begin?", sender: 'ai', timestamp: Date.now() }
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -158,7 +160,7 @@ const ChatAssistant = forwardRef<ChatAssistantHandle, ChatAssistantProps>(({
       return;
     }
 
-    const userMsg: Message = { id: crypto.randomUUID(), text, sender: 'user', timestamp: Date.now() };
+    const userMsg: Message = { id: Date.now().toString(), text, sender: 'user', timestamp: Date.now() };
     const currentMessages = [...messages];
     setMessages(prev => [...prev, userMsg]);
     setInput('');
@@ -240,7 +242,7 @@ const ChatAssistant = forwardRef<ChatAssistantHandle, ChatAssistantProps>(({
     }
 
     const aiMsg: Message = { 
-      id: crypto.randomUUID(), 
+      id: (Date.now() + 1).toString(), 
       text: executedCall ? (speakPhrase || "ok") : (result.text || "Command executed successfully."), 
       sender: 'ai', 
       timestamp: Date.now() 
@@ -266,9 +268,9 @@ const ChatAssistant = forwardRef<ChatAssistantHandle, ChatAssistantProps>(({
     }
 
     try {
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        stream.getTracks().forEach(track => track.stop());
+      if (!persistentMicStream && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        persistentMicStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // We do NOT stop the tracks, so the mic stays engaged to prevent flashing
       }
     } catch (err: any) {
       console.warn("Microphone access error:", err);
@@ -393,7 +395,7 @@ const ChatAssistant = forwardRef<ChatAssistantHandle, ChatAssistantProps>(({
     try {
       recognition.start();
     } catch (e) {
-      console.warn("Failed to start speech recognition:", e);
+      console.error("Failed to start speech recognition:", e);
       setIsListening(false);
       isListeningRef.current = false;
       isStartingRef.current = false;
@@ -411,12 +413,19 @@ const ChatAssistant = forwardRef<ChatAssistantHandle, ChatAssistantProps>(({
     }
   };
 
-  // Initialize refs but do not auto-start listening to avoid Permission Denied on mount
+  // Start continuous wake-word listener on startup
   useEffect(() => {
-    isWakeWordModeRef.current = false;
-    shouldListenRef.current = false;
+    isWakeWordModeRef.current = true;
+    shouldListenRef.current = true;
     
+    const timer = setTimeout(() => {
+      if (shouldListenRef.current) {
+        startSpeechRecognition();
+      }
+    }, 1500);
+
     return () => {
+      clearTimeout(timer);
       shouldListenRef.current = false;
       if (activeRecognitionRef.current) {
         try { activeRecognitionRef.current.abort(); } catch (e) {}

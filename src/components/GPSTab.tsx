@@ -7,6 +7,8 @@ import ReactMarkdown from 'react-markdown';
 import { GoogleMap, Marker, TrafficLayer, Polyline, DirectionsService, DirectionsRenderer } from '@react-google-maps/api';
 import { cn } from '../lib/utils';
 
+let persistentMicStream: MediaStream | null = null;
+
 interface GPSTabProps {
   isRecording: boolean;
   trips: Trip[];
@@ -178,9 +180,8 @@ export default function GPSTab({ isRecording, trips, navigation, setNavigation, 
     setMicError(null);
 
     try {
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        stream.getTracks().forEach(track => track.stop());
+      if (!persistentMicStream && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        persistentMicStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       }
     } catch (err: any) {
       console.warn("Microphone access error:", err);
@@ -240,7 +241,7 @@ export default function GPSTab({ isRecording, trips, navigation, setNavigation, 
     
     recognition.onerror = (event: any) => {
       if (event.error !== 'aborted' && event.error !== 'no-speech') {
-        console.warn('Speech recognition error', event.error);
+        console.error('Speech recognition error', event.error);
       }
       
       if (event.error === 'not-allowed') {
@@ -263,7 +264,7 @@ export default function GPSTab({ isRecording, trips, navigation, setNavigation, 
         try {
           recognitionRef.current.start();
         } catch (e) {
-          console.warn("Failed to restart recognition", e);
+          console.error("Failed to restart recognition", e);
         }
       } else {
         setIsListening(false);
@@ -274,7 +275,7 @@ export default function GPSTab({ isRecording, trips, navigation, setNavigation, 
     try {
       recognition.start();
     } catch (e) {
-      console.warn("Failed to start recognition", e);
+      console.error("Failed to start recognition", e);
     }
   };
 
@@ -352,7 +353,7 @@ export default function GPSTab({ isRecording, trips, navigation, setNavigation, 
 
   useEffect(() => {
     if (!navigator.geolocation) {
-      console.warn("Geolocation is not supported by this browser.");
+      console.error("Geolocation is not supported by this browser.");
       return;
     }
 
