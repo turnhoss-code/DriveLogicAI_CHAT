@@ -168,6 +168,8 @@ function Directions({
           onError("One or more locations could not be resolved. Please try a different address.");
         } else if (errCode === 'ZERO_RESULTS' || errMsg.includes('ZERO_RESULTS')) {
           onError("No driving route could be found between these locations.");
+        } else if (errCode === 'MAX_ROUTE_LENGTH_EXCEEDED' || errMsg.includes('MAX_ROUTE_LENGTH_EXCEEDED') || errMsg.includes('too long')) {
+          onError("The requested route is too long to calculate.");
         } else {
           onError("Failed to fetch directions.");
         }

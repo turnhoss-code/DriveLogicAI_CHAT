@@ -166,6 +166,8 @@ function Directions({
             onError("Location not found.");
           } else if (errCode === 'ZERO_RESULTS' || errMsg.includes('ZERO_RESULTS')) {
             onError("No driving route found.");
+          } else if (errCode === 'MAX_ROUTE_LENGTH_EXCEEDED' || errMsg.includes('MAX_ROUTE_LENGTH_EXCEEDED') || errMsg.includes('too long')) {
+            onError("Route is too long.");
           } else {
             onError("Error fetching directions.");
           }
