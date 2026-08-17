@@ -18,9 +18,6 @@ let nextStartTime = 0;
 let scheduledSources: AudioBufferSourceNode[] = [];
 
 export function playAudioChunk(audioCtx: AudioContext, base64: string, destination: AudioNode = audioCtx.destination) {
-  if (audioCtx.state === 'suspended') {
-    audioCtx.resume();
-  }
   const binary = window.atob(base64);
   const len = binary.length;
   const bytes = new Uint8Array(len);

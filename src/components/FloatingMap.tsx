@@ -3,7 +3,7 @@ import { MapPin, Navigation, X, Minimize2, Search, ArrowRight, Key, AlertCircle,
 import { motion, AnimatePresence } from 'motion/react';
 import { NavigationState } from '../types';
 import { cn } from '../lib/utils';
-import { GoogleMap, Marker, DirectionsRenderer, TrafficLayer } from '@react-google-maps/api';
+import { Map, AdvancedMarker, useMap, useMapsLibrary } from '@vis.gl/react-google-maps';
 
 interface FloatingMapProps {
   navigation: NavigationState;
@@ -11,11 +11,6 @@ interface FloatingMapProps {
   mapsApiKey: string;
   isLoaded: boolean;
 }
-
-const mapContainerStyle = {
-  width: '100%',
-  height: '100%'
-};
 
 const darkMapStyles = [
   { elementType: "geometry", stylers: [{ color: "#242f3e" }] },
@@ -98,6 +93,110 @@ const darkMapStyles = [
   },
 ];
 
+function Directions({
+  from,
+  to,
+  waypoints,
+  location,
+  onETAUpdate,
+  onError
+}: {
+  from: string;
+  to: string;
+  waypoints?: { lat: number; lng: number }[];
+  location: { lat: number; lng: number } | null;
+  onETAUpdate: (eta: string | null, dist: string | null) => void;
+  onError: (err: string | null) => void;
+}) {
+  const map = useMap();
+  const routesLibrary = useMapsLibrary('routes');
+  const [directionsService, setDirectionsService] = useState<google.maps.DirectionsService>();
+  const [directionsRenderer, setDirectionsRenderer] = useState<google.maps.DirectionsRenderer>();
+  const [routes, setRoutes] = useState<google.maps.DirectionsRoute[]>([]);
+  const [routeIndex, setRouteIndex] = useState(0);
+
+  useEffect(() => {
+    if (!routesLibrary || !map) return;
+    setDirectionsService(new routesLibrary.DirectionsService());
+    const renderer = new routesLibrary.DirectionsRenderer({ map });
+    setDirectionsRenderer(renderer);
+
+    return () => {
+      renderer.setMap(null);
+    };
+  }, [routesLibrary, map]);
+
+  useEffect(() => {
+    if (!directionsService || !directionsRenderer || !from || !to) return;
+
+    let origin: string | google.maps.LatLngLiteral = from;
+    if (from.toLowerCase() === 'current location' && location) {
+      origin = location;
+    } else if (from.toLowerCase() === 'current location' && !location) {
+      return;
+    }
+
+    const fetchRoute = () => {
+      directionsService
+        .route({
+          origin,
+          destination: to,
+          waypoints: waypoints?.map(wp => ({
+            location: new google.maps.LatLng(wp.lat, wp.lng),
+            stopover: true
+          })),
+          travelMode: google.maps.TravelMode.DRIVING,
+          drivingOptions: {
+            departureTime: new Date(),
+            trafficModel: google.maps.TrafficModel.BEST_GUESS
+          },
+          provideRouteAlternatives: true
+        })
+        .then(response => {
+          directionsRenderer.setDirections(response);
+          setRoutes(response.routes);
+          const route = response.routes[0].legs[0];
+          onETAUpdate(route.duration_in_traffic?.text || route.duration?.text || null, route.distance?.text || null);
+          onError(null);
+        })
+        .catch(err => {
+          const errCode = err.code || '';
+          const errMsg = err.message || '';
+          if (errCode === 'NOT_FOUND' || errMsg.includes('NOT_FOUND')) {
+            onError("Location not found.");
+          } else if (errCode === 'ZERO_RESULTS' || errMsg.includes('ZERO_RESULTS')) {
+            onError("No driving route found.");
+          } else {
+            onError("Error fetching directions.");
+          }
+          onETAUpdate(null, null);
+        });
+    };
+
+    fetchRoute();
+    const intervalId = setInterval(fetchRoute, 120000);
+    return () => clearInterval(intervalId);
+  }, [directionsService, directionsRenderer, from, to, waypoints, location, onETAUpdate, onError]);
+
+  useEffect(() => {
+    if (!directionsRenderer) return;
+    directionsRenderer.setRouteIndex(routeIndex);
+  }, [routeIndex, directionsRenderer]);
+
+  return null;
+}
+
+function TrafficLayerComponent() {
+  const map = useMap();
+  useEffect(() => {
+    if (!map) return;
+    const trafficLayer = new google.maps.TrafficLayer();
+    trafficLayer.setMap(map);
+    return () => trafficLayer.setMap(null);
+  }, [map]);
+  return null;
+}
+
 
 export default function FloatingMap({ navigation, setNavigation, mapsApiKey, isLoaded }: FloatingMapProps) {
   const [isMinimized, setIsMinimized] = useState(!navigation.isActive);
@@ -106,12 +205,10 @@ export default function FloatingMap({ navigation, setNavigation, mapsApiKey, isL
   const [fromInput, setFromInput] = useState(navigation.from);
   const [toInput, setToInput] = useState(navigation.to);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
   const [eta, setEta] = useState<string | null>(null);
   const [distance, setDistance] = useState<string | null>(null);
-  const [map, setMap] = useState<google.maps.Map | null>(null);
-  const [followUser, setFollowUser] = useState(true);
   const [routeError, setRouteError] = useState<string | null>(null);
+  const [followUser, setFollowUser] = useState(true);
 
   const resizeRef = useRef<HTMLDivElement>(null);
 
@@ -121,8 +218,8 @@ export default function FloatingMap({ navigation, setNavigation, mapsApiKey, isL
     const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
     
     const rect = resizeRef.current.getBoundingClientRect();
-    const newWidth = Math.max(200, window.innerWidth - clientX - 16); // 16px margin
-    const newHeight = Math.max(150, window.innerHeight - clientY - 96); // 96px bottom offset
+    const newWidth = Math.max(200, window.innerWidth - clientX - 16); 
+    const newHeight = Math.max(150, window.innerHeight - clientY - 96); 
     
     setSize({ width: newWidth, height: newHeight });
   }, []);
@@ -142,8 +239,6 @@ export default function FloatingMap({ navigation, setNavigation, mapsApiKey, isL
     window.addEventListener('touchend', stopResize);
   }, [handleResize, stopResize]);
 
-  // Assume isLoaded is passed as a prop from App.tsx or we rely on a global context. For now, since App.tsx loads it, window.google.maps should be available if we give it a moment, but passing it is better. Wait, we need to add isLoaded prop.
-
   useEffect(() => {
     let watchId: number;
     if (navigator.geolocation) {
@@ -151,17 +246,11 @@ export default function FloatingMap({ navigation, setNavigation, mapsApiKey, isL
         (pos) => {
           const newPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
           setLocation(newPos);
-          if (followUser && map) {
-            map.panTo(newPos);
-          }
         },
         (err) => {
           console.warn("Geolocation failed or denied, using fallback coordinates:", err);
           const fallbackPos = { lat: 37.7749, lng: -122.4194 };
           setLocation(fallbackPos);
-          if (followUser && map) {
-            map.panTo(fallbackPos);
-          }
         },
         { enableHighAccuracy: true, maximumAge: 5000, timeout: 5000 }
       );
@@ -171,110 +260,17 @@ export default function FloatingMap({ navigation, setNavigation, mapsApiKey, isL
         navigator.geolocation.clearWatch(watchId);
       }
     };
-  }, [map, followUser]);
-
-  useEffect(() => {
-    if (!isLoaded || !navigation.from || !navigation.to) {
-      setDirections(null);
-      setEta(null);
-      setDistance(null);
-      setRouteError(null);
-      return;
-    }
-
-    const fetchDirections = async () => {
-      const geocodeLocation = (address: string): Promise<boolean> => {
-        return new Promise((resolve) => {
-          if (!address || address === 'Current Location') {
-            resolve(true);
-            return;
-          }
-          const geocoder = new google.maps.Geocoder();
-          geocoder.geocode({ address }, (results, status) => {
-            resolve(status === google.maps.GeocoderStatus.OK);
-          });
-        });
-      };
-
-      const toValid = await geocodeLocation(navigation.to);
-      const fromValid = typeof navigation.from === 'string' ? await geocodeLocation(navigation.from) : true;
-
-      if (!toValid || !fromValid) {
-        setDirections(null);
-        setEta(null);
-        setDistance(null);
-        setRouteError("Location not found.");
-        return;
-      }
-
-      const directionsService = new google.maps.DirectionsService();
-      
-      // Handle "Current Location" by using the actual location state if available
-      let origin: string | google.maps.LatLngLiteral = navigation.from;
-      if (typeof navigation.from === 'string' && navigation.from.toLowerCase() === 'current location' && location) {
-        origin = location;
-      } else if (typeof navigation.from === 'string' && navigation.from.toLowerCase() === 'current location' && !location) {
-        // If location is not yet available, we can't route from current location
-        return;
-      }
-
-      directionsService.route(
-        {
-          origin: origin,
-          destination: navigation.to,
-          waypoints: navigation.waypoints?.map(wp => ({
-            location: new google.maps.LatLng(wp.lat, wp.lng),
-            stopover: true
-          })),
-          travelMode: google.maps.TravelMode.DRIVING,
-          drivingOptions: {
-            departureTime: new Date(), // Required to get traffic information
-            trafficModel: google.maps.TrafficModel.BEST_GUESS
-          }
-        },
-        (result, status) => {
-          if (status === google.maps.DirectionsStatus.OK && result) {
-            setDirections(result);
-            const route = result.routes[0].legs[0];
-            // Use duration_in_traffic if available, otherwise fallback to standard duration
-            setEta(route.duration_in_traffic?.text || route.duration?.text || null);
-            setDistance(route.distance?.text || null);
-            setRouteError(null);
-          } else {
-            // Clear directions if there's an error so we don't show stale data
-            setDirections(null);
-            setEta(null);
-            setDistance(null);
-            if (status === google.maps.DirectionsStatus.NOT_FOUND) {
-              setRouteError("Location not found.");
-            } else if (status === google.maps.DirectionsStatus.ZERO_RESULTS) {
-              setRouteError("No driving route found.");
-            } else {
-              setRouteError(`Error: ${status}`);
-            }
-          }
-        }
-      );
-    };
-
-    // Initial fetch
-    fetchDirections();
-
-    // Re-fetch every 2 minutes (120000 ms) to get updated traffic and ETAs
-    const intervalId = setInterval(fetchDirections, 120000);
-
-    return () => clearInterval(intervalId);
-  }, [isLoaded, navigation.from, navigation.to, navigation.waypoints, location]);
-
-  const handleStart = () => {
-    setNavigation({ ...navigation, from: fromInput, to: toInput });
-  };
+  }, []);
 
   useEffect(() => {
     if (navigation.isActive && isMinimized) {
       setIsMinimized(false);
     }
   }, [navigation.isActive]);
+
+  const handleStart = () => {
+    setNavigation({ ...navigation, from: fromInput, to: toInput });
+  };
 
   return (
     <motion.div
@@ -304,7 +300,6 @@ export default function FloatingMap({ navigation, setNavigation, mapsApiKey, isL
         </button>
       ) : (
         <div className="flex flex-col h-full relative">
-          {/* Resize Handle (Top-Left) */}
           {!isMini && (
             <div 
               onMouseDown={startResize}
@@ -315,7 +310,6 @@ export default function FloatingMap({ navigation, setNavigation, mapsApiKey, isL
             </div>
           )}
 
-          {/* Header */}
           <div className="p-3 bg-car-accent/10 flex items-center justify-between border-b border-white/5 shrink-0">
             <div className="flex items-center gap-2 overflow-hidden">
               <Navigation size={14} className="text-car-accent shrink-0" />
@@ -340,7 +334,6 @@ export default function FloatingMap({ navigation, setNavigation, mapsApiKey, isL
             </div>
           </div>
 
-          {/* Inputs - Hidden in Mini Mode */}
           {!isMini && (
             <div className="p-3 space-y-2 bg-black/20 shrink-0">
               <div className="relative">
@@ -368,7 +361,6 @@ export default function FloatingMap({ navigation, setNavigation, mapsApiKey, isL
             </div>
           )}
 
-          {/* Map View */}
           <div className="flex-1 relative bg-[#151619] overflow-hidden">
             {routeError && (
               <div className="absolute top-2 left-2 right-12 bg-car-danger/90 backdrop-blur-sm border border-car-danger/50 p-1.5 rounded-lg text-white z-30 flex items-center gap-1.5 shadow-lg">
@@ -376,59 +368,47 @@ export default function FloatingMap({ navigation, setNavigation, mapsApiKey, isL
                 <span className="text-[9px] font-bold tracking-tight line-clamp-2">{routeError}</span>
               </div>
             )}
-            {isLoaded && mapsApiKey ? (
-              <GoogleMap
-                mapContainerStyle={mapContainerStyle}
-                center={location || { lat: 37.7749, lng: -122.4194 }}
-                zoom={isMini ? 13 : 15}
-                onLoad={(map) => setMap(map)}
-                onUnmount={() => setMap(null)}
-                onDragStart={() => setFollowUser(false)}
-                options={{
-                  styles: darkMapStyles,
-                  disableDefaultUI: true,
-                }}
-                onClick={(e) => {
-                  if (e.latLng) {
-                    const lat = e.latLng.lat();
-                    const lng = e.latLng.lng();
-                    const geocoder = new google.maps.Geocoder();
-                    geocoder.geocode({ location: { lat, lng } }, (results, status) => {
-                      let destination = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
-                      if (status === 'OK' && results && results[0]) {
-                        destination = results[0].formatted_address;
-                      }
-                      
-                      if (!navigation.to) {
-                        setToInput(destination);
-                        setNavigation({ ...navigation, to: destination, waypoints: [] });
-                      } else {
-                        const currentWaypoints = navigation.waypoints || [];
-                        setNavigation({ 
-                          ...navigation, 
-                          waypoints: [...currentWaypoints, { lat, lng }]
-                        });
-                      }
-                    });
-                  }
-                }}
-              >
-                <TrafficLayer />
-                {location && <Marker position={location} icon={{ path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: "#4285F4", fillOpacity: 1, strokeWeight: 2, strokeColor: "#FFFFFF" }} />}
-                {directions && <DirectionsRenderer directions={directions} options={{ suppressMarkers: false }} />}
-              </GoogleMap>
-            ) : (
-              <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center">
-                {!mapsApiKey ? (
-                  <Key className="text-car-warning" size={16} />
-                ) : (
-                  <Navigation className="text-car-accent animate-pulse" size={16} />
-                )}
-              </div>
-            )}
+            
+            <Map
+              defaultCenter={location || { lat: 37.7749, lng: -122.4194 }}
+              defaultZoom={isMini ? 13 : 15}
+              gestureHandling={'greedy'}
+              disableDefaultUI={true}
+              mapId="floating_map_id"
+              styles={darkMapStyles}
+              internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
+              onDragstart={() => setFollowUser(false)}
+            >
+              <TrafficLayerComponent />
+              {location && (
+                <AdvancedMarker position={location}>
+                  <div style={{
+                    width: '12px',
+                    height: '12px',
+                    backgroundColor: '#4285F4',
+                    borderRadius: '50%',
+                    border: '2px solid white',
+                    boxShadow: '0 0 4px rgba(0,0,0,0.5)'
+                  }} />
+                </AdvancedMarker>
+              )}
+              {navigation.from && navigation.to && (
+                <Directions 
+                  from={navigation.from}
+                  to={navigation.to}
+                  waypoints={navigation.waypoints}
+                  location={location}
+                  onETAUpdate={(e, d) => {
+                    setEta(e);
+                    setDistance(d);
+                  }}
+                  onError={(err) => setRouteError(err)}
+                />
+              )}
+            </Map>
 
             {(eta || distance) && !isMini && (
-              <div className="absolute bottom-3 left-3 right-3 p-2 glass-card rounded-xl border border-white/5 flex items-center justify-between">
+              <div className="absolute bottom-3 left-3 right-3 p-2 glass-card rounded-xl border border-white/5 flex items-center justify-between z-10 pointer-events-none">
                 <div>
                   <p className="text-[7px] uppercase tracking-widest text-white/40">ETA</p>
                   <p className="text-[10px] font-bold text-white">{eta || '--'}</p>
@@ -441,20 +421,18 @@ export default function FloatingMap({ navigation, setNavigation, mapsApiKey, isL
             )}
 
             {isMini && (eta || distance) && (
-              <div className="absolute bottom-2 left-2 right-2 px-2 py-1 bg-black/60 backdrop-blur-sm rounded-lg flex justify-between items-center">
+              <div className="absolute bottom-2 left-2 right-2 px-2 py-1 bg-black/60 backdrop-blur-sm rounded-lg flex justify-between items-center z-10 pointer-events-none">
                 <span className="text-[8px] font-bold text-white">{eta}</span>
                 <span className="text-[8px] font-bold text-car-accent">{distance}</span>
               </div>
             )}
 
-            {/* Follow Me Button */}
             <button
               onClick={() => {
                 setFollowUser(true);
-                if (location && map) map.panTo(location);
               }}
               className={cn(
-                "absolute top-2 right-2 p-1.5 rounded-lg border transition-all z-20",
+                "absolute top-2 right-2 p-1.5 rounded-lg border transition-all z-20 pointer-events-auto",
                 followUser 
                   ? "bg-car-accent text-white border-car-accent" 
                   : "bg-black/60 text-white/60 border-white/10 hover:bg-black/80"

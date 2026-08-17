@@ -1,10 +1,14 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { Mic, X, Loader2, Sparkles, AlertTriangle, Headphones, User, Bot, Square } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { pcmToBase64, playAudioChunk, resetAudioPlayback } from '../lib/audioUtils';
 
-export default function LiveChatAssistant({ 
+export interface LiveChatAssistantHandle {
+  toggleMic: () => void;
+}
+
+const LiveChatAssistant = forwardRef<LiveChatAssistantHandle, any>(({ 
   speed, 
   rpm, 
   isRecording,
@@ -15,8 +19,8 @@ export default function LiveChatAssistant({
   postCommandActions,
   isSimulation,
   onSetSimulation
-}: any) {
-  const [isOpen, setIsOpen] = useState(true);
+}, ref) => {
+  const [isOpen, setIsOpen] = useState(false);
   const [isLive, setIsLive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
@@ -34,7 +38,7 @@ export default function LiveChatAssistant({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const transcriptEndRef = useRef<HTMLDivElement | null>(null);
   const animationFrameRef = useRef<number | null>(null);
-  const autoStartAttemptedRef = useRef<boolean>(false);
+  const bgRecognitionRef = useRef<any>(null);
 
   // Sync refs to avoid stale closures in callbacks
   const postCommandActionsRef = useRef(postCommandActions);
@@ -158,13 +162,128 @@ export default function LiveChatAssistant({
     };
   }, [isLive, activeSpeechState]);
 
-  const startLive = async () => {
+  const initialPromptRef = useRef<string | null>(null);
+
+  // Start background listening on mount instead of Live API
+  useEffect(() => {
+    startContinuousListening();
+    return () => {
+      stopLive();
+    };
+  }, []);
+
+  const processCommand = (command: string) => {
+    if (command.includes('navigate to') || command.includes('set destination to') || command.includes('go to')) {
+      const destination = command.replace(/.*(navigate to|set destination to|go to)\s+/g, '').trim();
+      onTabChangeRef.current && onTabChangeRef.current('gps');
+      onSetNavigationRef.current && onSetNavigationRef.current('Current Location', destination);
+      if (postCommandActionsRef.current?.setNavigation === 'autoRecord') {
+        onToggleRecordingRef.current && onToggleRecordingRef.current(true);
+      }
+    } else if (command.includes('diagnose') || command.includes('run diagnostics') || command.includes('check engine')) {
+      onTabChangeRef.current && onTabChangeRef.current('obd');
+      onDiagnoseRef.current && onDiagnoseRef.current();
+    } else if (command.includes('start recording') || command.includes('record trip')) {
+      onToggleRecordingRef.current && onToggleRecordingRef.current(true);
+      if (postCommandActionsRef.current?.toggleRecording === 'switchGPS') {
+        onTabChangeRef.current && onTabChangeRef.current('gps');
+      }
+    } else if (command.includes('stop recording')) {
+      onToggleRecordingRef.current && onToggleRecordingRef.current(false);
+    } else if (command.includes('show dashboard') || command.includes('switch to dashboard')) {
+      onTabChangeRef.current && onTabChangeRef.current('dashboard');
+    } else if (command.includes('show gps') || command.includes('switch to gps') || command.includes('show map')) {
+      onTabChangeRef.current && onTabChangeRef.current('gps');
+    } else if (command.includes('show maintenance')) {
+      onTabChangeRef.current && onTabChangeRef.current('maintenance');
+    } else if (command.includes('show obd')) {
+      onTabChangeRef.current && onTabChangeRef.current('obd');
+    } else if (command.includes('show damage')) {
+      onTabChangeRef.current && onTabChangeRef.current('damage');
+    } else {
+      // For general commands, we can pass to live assistant
+      if (!isLive) {
+        startLive(command);
+      } else if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ text: command }));
+      }
+    }
+  };
+
+  const startContinuousListening = async () => {
+    const win = window as any;
+    if (!('webkitSpeechRecognition' in win) && !('SpeechRecognition' in win)) {
+      return;
+    }
+    
+    if (!bgRecognitionRef.current) {
+      const SpeechRecognition = win.SpeechRecognition || win.webkitSpeechRecognition;
+      bgRecognitionRef.current = new SpeechRecognition();
+      bgRecognitionRef.current.continuous = true;
+      bgRecognitionRef.current.interimResults = false;
+      
+      bgRecognitionRef.current.onresult = (event: any) => {
+        const current = event.resultIndex;
+        const transcript = event.results[current][0].transcript.toLowerCase();
+        
+        if (transcript.includes('hey drive logic') || transcript.includes('hey drivelogic') || transcript.includes('hey drive-logic')) {
+          let commandParts = transcript.split('hey drive-logic');
+          if (commandParts.length === 1) {
+            commandParts = transcript.split('hey drive logic');
+          }
+          if (commandParts.length === 1) {
+            commandParts = transcript.split('hey drivelogic');
+          }
+          const command = commandParts[commandParts.length - 1].trim();
+          
+          if (command) {
+            processCommand(command);
+          } else {
+            // just wake word, maybe open assistant
+            if (!isLive) startLive();
+            else setIsOpen(true);
+          }
+        }
+      };
+      
+      bgRecognitionRef.current.onerror = (event: any) => {};
+      
+      bgRecognitionRef.current.onend = () => {
+        // Auto restart to keep listening in background
+        try {
+          if (!isLive) {
+            bgRecognitionRef.current?.start();
+          }
+        } catch (e) { }
+      };
+    }
+
     try {
+      if (!isLive) bgRecognitionRef.current.start();
+    } catch (e) {}
+  };
+
+  useImperativeHandle(ref, () => ({
+    toggleMic: () => {
+      setIsOpen(true);
+      if (!isLive) startLive();
+    }
+  }));
+
+  const startLive = async (initialPrompt?: string | any) => {
+    try {
+      if (typeof initialPrompt === 'string') {
+        initialPromptRef.current = initialPrompt;
+      }
+      
+      setIsOpen(true);
       setError(null);
       setActiveSpeechState('connecting');
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
+      // Stop background listening while live session is active
+      try {
+        bgRecognitionRef.current?.stop();
+      } catch (e) {}
 
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = `${protocol}//${window.location.host}/live`;
@@ -187,6 +306,9 @@ export default function LiveChatAssistant({
       outputAnalyser.fftSize = 64;
       outputAnalyser.connect(outputAudioCtx.destination);
       outputAnalyserRef.current = outputAnalyser;
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
       
       const source = inputAudioCtx.createMediaStreamSource(stream);
       source.connect(inputAnalyser);
@@ -206,14 +328,37 @@ export default function LiveChatAssistant({
 
       ws.onopen = () => {
         setIsLive(true);
-        setActiveSpeechState('listening');
-        ws.send(JSON.stringify({ text: "Please provide a short verbal greeting that says exactly: 'Hi, im drive-logic, your onboard ai assistant. what journey should we begin?'" }));
+        setActiveSpeechState('connecting');
       };
 
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data);
         if (msg.error) {
-          setError(msg.error);
+          let errorText = msg.error;
+          if (errorText.includes("RESOURCE_EXHAUSTED") || errorText.includes("prepayment credits")) {
+            errorText = "Your API Key has run out of prepaid credits. Add balance in Google AI Studio to continue.";
+          } else if (errorText.includes("{")) {
+            try {
+              const parsed = JSON.parse(errorText.replace("API Error: ", ""));
+              if (parsed.error && parsed.error.message) {
+                errorText = parsed.error.message;
+              }
+            } catch (e) {
+              // ignore
+            }
+          }
+          setError(errorText);
+          return;
+        }
+
+        if (msg.ready) {
+          setActiveSpeechState('listening');
+          if (initialPromptRef.current) {
+            ws.send(JSON.stringify({ text: initialPromptRef.current }));
+            initialPromptRef.current = null; // Clear it after sending
+          } else {
+            ws.send(JSON.stringify({ text: "Hello! Please introduce yourself to me." }));
+          }
           return;
         }
 
@@ -351,18 +496,20 @@ export default function LiveChatAssistant({
     }
     inputAnalyserRef.current = null;
     outputAnalyserRef.current = null;
+
+    // Resume background listening
+    setTimeout(() => {
+      try {
+        bgRecognitionRef.current?.start();
+      } catch (e) {}
+    }, 500);
   };
 
   useEffect(() => {
-    if (isOpen) {
-      if (!isLive && activeSpeechState === 'idle') {
-        startLive();
-      }
-    } else {
+    return () => {
       stopLive();
-      setError(null);
-    }
-  }, [isOpen, isLive, activeSpeechState]);
+    };
+  }, []);
 
   // Compute clean readable labels for status
   const getStatusLabel = () => {
@@ -456,9 +603,9 @@ export default function LiveChatAssistant({
             {/* Status, Visualization & Controls Container */}
             <div className="p-4 bg-car-bg/95 border-t border-white/5 shrink-0 flex flex-col items-center gap-3">
               {error && (
-                <div className="w-full text-[10px] text-car-danger bg-car-danger/10 px-3 py-1.5 rounded-lg flex items-center gap-2 border border-car-danger/25">
-                  <AlertTriangle size={12} className="shrink-0" />
-                  <span className="truncate">{error}</span>
+                <div className="w-full text-[10px] text-car-danger bg-car-danger/10 px-3 py-2 rounded-lg flex items-start gap-2 border border-car-danger/25">
+                  <AlertTriangle size={12} className="shrink-0 mt-0.5" />
+                  <span className="leading-tight">{error}</span>
                 </div>
               )}
 
@@ -517,4 +664,6 @@ export default function LiveChatAssistant({
       </AnimatePresence>
     </>
   );
-}
+});
+
+export default LiveChatAssistant;

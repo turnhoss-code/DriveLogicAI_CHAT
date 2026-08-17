@@ -1,5 +1,5 @@
 {
-  "name": "DRIVELOGIC-AI-CHAT",
+  "name": "DriveLogicAI",
   "description": "Advanced vehicle intelligence platform featuring real-time ELM327 OBD-II diagnostics, high-fidelity IMU sensor telemetry, and 99% accurate AI-powered health analysis using Gemini Pro.",
   "requestFramePermissions": [
     "geolocation",

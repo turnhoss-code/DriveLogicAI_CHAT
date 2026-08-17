@@ -9,7 +9,7 @@
       "DOM",
       "DOM.Iterable"
     ],
-    "types": ["vite/client", "web-bluetooth"],
+    "types": ["vite/client", "web-bluetooth", "google.maps"],
     "skipLibCheck": true,
     "moduleResolution": "bundler",
     "isolatedModules": true,

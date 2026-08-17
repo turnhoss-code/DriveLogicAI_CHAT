@@ -4,10 +4,8 @@ import { Trip, NavigationState } from '../types';
 import { getRouteRecommendation } from '../services/geminiService';
 import { motion } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
-import { GoogleMap, Marker, TrafficLayer, Polyline, DirectionsService, DirectionsRenderer } from '@react-google-maps/api';
+import { Map, AdvancedMarker, useMap, useMapsLibrary } from '@vis.gl/react-google-maps';
 import { cn } from '../lib/utils';
-
-let persistentMicStream: MediaStream | null = null;
 
 interface GPSTabProps {
   isRecording: boolean;
@@ -17,11 +15,6 @@ interface GPSTabProps {
   mapsApiKey: string;
   isLoaded: boolean;
 }
-
-const mapContainerStyle = {
-  width: '100%',
-  height: '100%'
-};
 
 const darkMapStyles = [
   { elementType: "geometry", stylers: [{ color: "#242f3e" }] },
@@ -104,13 +97,117 @@ const darkMapStyles = [
   },
 ];
 
-// Mock user-posted speed trap data
 const MOCK_SPEED_TRAPS = [
-  { id: '1', lat: 37.7749, lng: -122.4194, reportedAt: Date.now() - 1000 * 60 * 15 }, // 15 mins ago
-  { id: '2', lat: 37.7858, lng: -122.4064, reportedAt: Date.now() - 1000 * 60 * 45 }, // 45 mins ago
-  { id: '3', lat: 37.7694, lng: -122.4862, reportedAt: Date.now() - 1000 * 60 * 120 }, // 2 hours ago
+  { id: '1', lat: 37.7749, lng: -122.4194, reportedAt: Date.now() - 1000 * 60 * 15 },
+  { id: '2', lat: 37.7858, lng: -122.4064, reportedAt: Date.now() - 1000 * 60 * 45 },
+  { id: '3', lat: 37.7694, lng: -122.4862, reportedAt: Date.now() - 1000 * 60 * 120 },
 ];
 
+function Directions({
+  from,
+  to,
+  waypoints,
+  location,
+  onError
+}: {
+  from: string;
+  to: string;
+  waypoints?: { lat: number; lng: number }[];
+  location: { lat: number; lng: number } | null;
+  onError: (err: string | null) => void;
+}) {
+  const map = useMap();
+  const routesLibrary = useMapsLibrary('routes');
+  const [directionsService, setDirectionsService] = useState<google.maps.DirectionsService>();
+  const [directionsRenderer, setDirectionsRenderer] = useState<google.maps.DirectionsRenderer>();
+
+  useEffect(() => {
+    if (!routesLibrary || !map) return;
+    setDirectionsService(new routesLibrary.DirectionsService());
+    const renderer = new routesLibrary.DirectionsRenderer({ map });
+    
+    renderer.setOptions({
+      suppressMarkers: false,
+      polylineOptions: {
+        strokeColor: '#2ECC71',
+        strokeOpacity: 0.8,
+        strokeWeight: 6,
+      }
+    });
+
+    setDirectionsRenderer(renderer);
+    return () => renderer.setMap(null);
+  }, [routesLibrary, map]);
+
+  useEffect(() => {
+    if (!directionsService || !directionsRenderer || !from || !to) return;
+
+    let origin: string | google.maps.LatLngLiteral = from;
+    if (from.toLowerCase() === 'current location' && location) {
+      origin = location;
+    }
+
+    directionsService
+      .route({
+        origin,
+        destination: to,
+        waypoints: waypoints?.map(wp => ({
+          location: new google.maps.LatLng(wp.lat, wp.lng),
+          stopover: true
+        })),
+        travelMode: google.maps.TravelMode.DRIVING,
+      })
+      .then(response => {
+        directionsRenderer.setDirections(response);
+        onError(null);
+      })
+      .catch(err => {
+        const errCode = err.code || '';
+        const errMsg = err.message || '';
+        if (errCode === 'NOT_FOUND' || errMsg.includes('NOT_FOUND')) {
+          onError("One or more locations could not be resolved. Please try a different address.");
+        } else if (errCode === 'ZERO_RESULTS' || errMsg.includes('ZERO_RESULTS')) {
+          onError("No driving route could be found between these locations.");
+        } else {
+          onError("Failed to fetch directions.");
+        }
+      });
+  }, [directionsService, directionsRenderer, from, to, waypoints, location, onError]);
+
+  return null;
+}
+
+function TrafficLayerComponent() {
+  const map = useMap();
+  useEffect(() => {
+    if (!map) return;
+    const trafficLayer = new google.maps.TrafficLayer();
+    trafficLayer.setMap(map);
+    return () => trafficLayer.setMap(null);
+  }, [map]);
+  return null;
+}
+
+function TripPolyline({ path }: { path: { lat: number, lng: number }[] }) {
+  const map = useMap();
+  const mapsLib = useMapsLibrary('maps');
+  
+  useEffect(() => {
+    if (!map || !mapsLib || !path.length) return;
+    
+    const polyline = new mapsLib.Polyline({
+      path,
+      strokeColor: '#00F0FF',
+      strokeOpacity: 0.8,
+      strokeWeight: 4,
+    });
+    
+    polyline.setMap(map);
+    return () => polyline.setMap(null);
+  }, [map, mapsLib, path]);
+  
+  return null;
+}
 
 export default function GPSTab({ isRecording, trips, navigation, setNavigation, mapsApiKey, isLoaded }: GPSTabProps) {
   const [recommendation, setRecommendation] = useState<string | null>(null);
@@ -118,7 +215,6 @@ export default function GPSTab({ isRecording, trips, navigation, setNavigation, 
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [accuracy, setAccuracy] = useState<number | null>(null);
-  const [map, setMap] = useState<google.maps.Map | null>(null);
   const [followUser, setFollowUser] = useState(true);
   const [showTraffic, setShowTraffic] = useState(false);
   const [searchValue, setSearchValue] = useState("");
@@ -127,7 +223,6 @@ export default function GPSTab({ isRecording, trips, navigation, setNavigation, 
   const [isWakeWordActive, setIsWakeWordActive] = useState(false);
   const [isAwake, setIsAwake] = useState(false);
   const [micError, setMicError] = useState<string | null>(null);
-  const [directionsResponse, setDirectionsResponse] = useState<google.maps.DirectionsResult | null>(null);
   const [routeError, setRouteError] = useState<string | null>(null);
   const recognitionRef = useRef<any>(null);
   const awakeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -180,8 +275,9 @@ export default function GPSTab({ isRecording, trips, navigation, setNavigation, 
     setMicError(null);
 
     try {
-      if (!persistentMicStream && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        persistentMicStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach(track => track.stop());
       }
     } catch (err: any) {
       console.warn("Microphone access error:", err);
@@ -218,12 +314,15 @@ export default function GPSTab({ isRecording, trips, navigation, setNavigation, 
       const current = event.resultIndex;
       const transcript = event.results[current][0].transcript.toLowerCase();
       
-      if (transcript.includes('hey drive logic') || transcript.includes('hey drivelogic')) {
+      if (transcript.includes('hey drive logic') || transcript.includes('hey drivelogic') || transcript.includes('hey drive-logic')) {
         setIsAwake(true);
         if (awakeTimeoutRef.current) clearTimeout(awakeTimeoutRef.current);
         awakeTimeoutRef.current = setTimeout(() => setIsAwake(false), 8000);
 
-        let commandParts = transcript.split('hey drive logic');
+        let commandParts = transcript.split('hey drive-logic');
+        if (commandParts.length === 1) {
+          commandParts = transcript.split('hey drive logic');
+        }
         if (commandParts.length === 1) {
           commandParts = transcript.split('hey drivelogic');
         }
@@ -292,66 +391,6 @@ export default function GPSTab({ isRecording, trips, navigation, setNavigation, 
   }, []);
 
   useEffect(() => {
-    const originIsString = navigation.from && navigation.from !== 'Current Location';
-    const hasOrigin = originIsString || location;
-
-    if (navigation.isActive && navigation.to && hasOrigin) {
-      if (!window.google || !window.google.maps || !window.google.maps.DirectionsService) return;
-      
-      const geocodeLocation = (address: string): Promise<boolean> => {
-        return new Promise((resolve) => {
-          if (!address || address === 'Current Location') {
-            resolve(true);
-            return;
-          }
-          const geocoder = new window.google.maps.Geocoder();
-          geocoder.geocode({ address }, (results, status) => {
-            resolve(status === window.google.maps.GeocoderStatus.OK);
-          });
-        });
-      };
-
-      const checkLocations = async () => {
-        const toValid = await geocodeLocation(navigation.to);
-        const fromValid = originIsString ? await geocodeLocation(navigation.from) : true;
-
-        if (!toValid || !fromValid) {
-          setDirectionsResponse(null);
-          setRouteError("One or more locations could not be resolved. Please try a different address.");
-          return;
-        }
-
-        const ds = new window.google.maps.DirectionsService();
-        ds.route({
-          origin: originIsString ? navigation.from : { lat: location!.lat, lng: location!.lng },
-          destination: navigation.to,
-          travelMode: window.google.maps.TravelMode.DRIVING,
-          waypoints: navigation.waypoints?.map(wp => ({ location: { lat: wp.lat, lng: wp.lng } })) || []
-        }, (result, status) => {
-          if (status === window.google.maps.DirectionsStatus.OK && result) {
-            setDirectionsResponse(result);
-            setRouteError(null);
-          } else {
-            setDirectionsResponse(null);
-            if (status === window.google.maps.DirectionsStatus.NOT_FOUND) {
-              setRouteError("One or more locations could not be resolved. Please try a different address.");
-            } else if (status === window.google.maps.DirectionsStatus.ZERO_RESULTS) {
-              setRouteError("No driving route could be found between these locations.");
-            } else {
-              setRouteError(`Failed to fetch directions: ${status}`);
-            }
-          }
-        });
-      };
-      
-      checkLocations();
-    } else {
-      setDirectionsResponse(null);
-      setRouteError(null);
-    }
-  }, [navigation, location]);
-
-  useEffect(() => {
     if (!navigator.geolocation) {
       console.error("Geolocation is not supported by this browser.");
       return;
@@ -362,20 +401,12 @@ export default function GPSTab({ isRecording, trips, navigation, setNavigation, 
         const newPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         setLocation(newPos);
         setAccuracy(pos.coords.accuracy);
-        
-        if (followUser && map) {
-          map.panTo(newPos);
-        }
       },
       (err) => {
         console.warn("Geolocation failed or denied, using fallback coordinates:", err);
-        // Fallback to a default location (e.g., San Francisco) if geolocation fails
         const fallbackPos = { lat: 37.7749, lng: -122.4194 };
         setLocation(fallbackPos);
         setAccuracy(100);
-        if (followUser && map) {
-          map.panTo(fallbackPos);
-        }
       },
       {
         enableHighAccuracy: true,
@@ -385,14 +416,6 @@ export default function GPSTab({ isRecording, trips, navigation, setNavigation, 
     );
 
     return () => navigator.geolocation.clearWatch(watchId);
-  }, [map, followUser]);
-
-  const onLoad = useCallback(function callback(map: google.maps.Map) {
-    setMap(map);
-  }, []);
-
-  const onUnmount = useCallback(function callback(map: google.maps.Map) {
-    setMap(null);
   }, []);
 
   const handleRecommendation = async () => {
@@ -420,7 +443,6 @@ export default function GPSTab({ isRecording, trips, navigation, setNavigation, 
         const lng = place.geometry.location.lng();
         const address = place.formatted_address || `${lat}, ${lng}`;
         
-        map?.panTo({ lat, lng });
         setFollowUser(false);
         setNavigation({ from: 'Current Location', to: address, isActive: true });
         setSearchValue("");
@@ -431,11 +453,11 @@ export default function GPSTab({ isRecording, trips, navigation, setNavigation, 
     });
   };
 
-  const handleMapClick = (e: google.maps.MapMouseEvent) => {
-    if (e.latLng) {
-      const lat = e.latLng.lat();
-      const lng = e.latLng.lng();
-      
+  const handleMapClick = (e: any) => {
+    const lat = e.detail.latLng.lat;
+    const lng = e.detail.latLng.lng;
+    
+    if (lat && lng) {
       const geocoder = new google.maps.Geocoder();
       geocoder.geocode({ location: { lat, lng } }, (results, status) => {
         let destination = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
@@ -462,7 +484,6 @@ export default function GPSTab({ isRecording, trips, navigation, setNavigation, 
 
   return (
     <div className="space-y-6">
-      {/* Navigation Controls */}
       <div className="glass-card p-6 rounded-3xl space-y-4 hud-border">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-car-accent/10 rounded-xl">
@@ -527,11 +548,9 @@ export default function GPSTab({ isRecording, trips, navigation, setNavigation, 
         </div>
       )}
 
-      {/* Map View */}
       <div className="relative h-96 rounded-3xl overflow-hidden glass-card border-white/5 flex flex-col scanline-overlay">
         {isLoaded && mapsApiKey ? (
           <>
-            {/* Search Bar Overlay */}
             <div className="absolute top-4 left-4 right-16 z-10">
               <form
                 onSubmit={handleManualSearch}
@@ -562,114 +581,85 @@ export default function GPSTab({ isRecording, trips, navigation, setNavigation, 
               </form>
             </div>
 
-            <GoogleMap
-              mapContainerStyle={mapContainerStyle}
-              center={location || { lat: 37.7749, lng: -122.4194 }}
-              zoom={15}
-              onLoad={onLoad}
-              onUnmount={onUnmount}
-              onDragStart={() => setFollowUser(false)}
+            <Map
+              defaultCenter={location || { lat: 37.7749, lng: -122.4194 }}
+              defaultZoom={15}
+              gestureHandling={'greedy'}
+              disableDefaultUI={true}
+              mapId="gps_tab_map_id"
+              styles={darkMapStyles}
+              internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
+              onDragstart={() => setFollowUser(false)}
               onClick={handleMapClick}
-              options={{
-                styles: darkMapStyles,
-                disableDefaultUI: true,
-                zoomControl: true,
-                clickableIcons: false,
-              }}
             >
-              {showTraffic && <TrafficLayer />}
+              {showTraffic && <TrafficLayerComponent />}
               
-              {directionsResponse && (
-                <DirectionsRenderer
-                  options={{
-                    directions: directionsResponse,
-                    suppressMarkers: false,
-                    polylineOptions: {
-                      strokeColor: '#2ECC71',
-                      strokeOpacity: 0.8,
-                      strokeWeight: 6,
-                    }
-                  }}
+              {navigation.isActive && navigation.to && (
+                <Directions 
+                  from={navigation.from || 'Current Location'}
+                  to={navigation.to}
+                  waypoints={navigation.waypoints}
+                  location={location}
+                  onError={setRouteError}
                 />
               )}
               
               {location && (
-                <Marker 
-                  position={location} 
-                  icon={{
-                    path: google.maps.SymbolPath.CIRCLE,
-                    scale: 8,
-                    fillColor: "#4285F4",
-                    fillOpacity: 1,
-                    strokeWeight: 2,
-                    strokeColor: "#FFFFFF",
-                  }}
-                  zIndex={100}
-                />
+                <AdvancedMarker position={location} zIndex={100}>
+                  <div style={{
+                    width: '16px',
+                    height: '16px',
+                    backgroundColor: '#4285F4',
+                    borderRadius: '50%',
+                    border: '3px solid white',
+                    boxShadow: '0 0 6px rgba(0,0,0,0.5)'
+                  }} />
+                </AdvancedMarker>
               )}
 
-              {/* Speed Trap Markers */}
               {MOCK_SPEED_TRAPS.map(trap => (
-                <Marker
-                  key={trap.id}
-                  position={{ lat: trap.lat, lng: trap.lng }}
-                  icon={{
-                    path: google.maps.SymbolPath.CIRCLE,
-                    scale: 10,
-                    fillColor: "#EF4444",
-                    fillOpacity: 0.8,
-                    strokeWeight: 2,
-                    strokeColor: "#FFFFFF",
-                  }}
-                  label={{
-                    text: "👮",
-                    fontSize: "12px",
-                  }}
-                  title={`Speed Trap reported ${Math.round((Date.now() - trap.reportedAt) / 60000)} mins ago`}
-                />
+                <AdvancedMarker key={trap.id} position={{ lat: trap.lat, lng: trap.lng }} title={`Speed Trap reported ${Math.round((Date.now() - trap.reportedAt) / 60000)} mins ago`}>
+                  <div style={{
+                    fontSize: '20px',
+                    backgroundColor: 'rgba(239, 68, 68, 0.2)',
+                    padding: '4px',
+                    borderRadius: '50%',
+                    border: '1px solid #EF4444'
+                  }}>
+                    👮
+                  </div>
+                </AdvancedMarker>
               ))}
 
-              {/* Waypoint Markers */}
               {navigation.waypoints?.map((wp, i) => (
-                <Marker
-                  key={`wp-${i}`}
-                  position={wp}
-                  icon={{
-                    path: google.maps.SymbolPath.CIRCLE,
-                    scale: 8,
-                    fillColor: "#F59E0B",
-                    fillOpacity: 1,
-                    strokeWeight: 2,
-                    strokeColor: "#FFFFFF",
-                  }}
-                  label={{
-                    text: `${i + 1}`,
-                    fontSize: "10px",
-                    fontWeight: "bold",
-                    color: "#000000"
-                  }}
-                />
+                <AdvancedMarker key={`wp-${i}`} position={wp}>
+                  <div style={{
+                    width: '24px',
+                    height: '24px',
+                    backgroundColor: '#F59E0B',
+                    borderRadius: '50%',
+                    border: '2px solid white',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'black',
+                    fontSize: '12px',
+                    fontWeight: 'bold'
+                  }}>
+                    {i + 1}
+                  </div>
+                </AdvancedMarker>
               ))}
 
-              {/* Selected Trip Polyline */}
               {selectedTrip && selectedTrip.waypoints.length > 0 && (
-                <Polyline
-                  path={selectedTrip.waypoints.map(wp => ({ lat: wp.lat, lng: wp.lng }))}
-                  options={{
-                    strokeColor: '#00F0FF',
-                    strokeOpacity: 0.8,
-                    strokeWeight: 4,
-                  }}
-                />
+                <TripPolyline path={selectedTrip.waypoints.map(wp => ({ lat: wp.lat, lng: wp.lng }))} />
               )}
-            </GoogleMap>
+            </Map>
             
-            {/* Map Controls */}
             <div className="absolute top-4 right-4 flex flex-col gap-2 z-10">
               <button
                 onClick={() => {
                   setFollowUser(true);
-                  if (location && map) map.panTo(location);
                 }}
                 className={cn(
                   "p-3 rounded-xl transition-all border shadow-lg",
@@ -695,7 +685,6 @@ export default function GPSTab({ isRecording, trips, navigation, setNavigation, 
               </button>
             </div>
 
-            {/* Live GPS Overlay */}
             <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between pointer-events-none z-10">
               <div className="bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-2 shadow-lg">
                 <div className="w-1.5 h-1.5 rounded-full bg-car-success animate-pulse" />
@@ -741,7 +730,6 @@ export default function GPSTab({ isRecording, trips, navigation, setNavigation, 
         )}
       </div>
 
-      {/* AI Route Recommendation */}
       <div className="glass-card p-6 rounded-3xl space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -806,7 +794,6 @@ export default function GPSTab({ isRecording, trips, navigation, setNavigation, 
         )}
       </div>
 
-      {/* Trip History for Visual Review */}
       {trips.length > 0 && (
         <div className="glass-card p-6 rounded-3xl space-y-4">
           <div className="flex items-center gap-3">
@@ -828,9 +815,6 @@ export default function GPSTab({ isRecording, trips, navigation, setNavigation, 
                   } else {
                     setSelectedTripId(trip.id);
                     setFollowUser(false);
-                    if (map && trip.waypoints.length > 0) {
-                      map.panTo({ lat: trip.waypoints[0].lat, lng: trip.waypoints[0].lng });
-                    }
                   }
                 }}
                 className={cn(
@@ -854,7 +838,6 @@ export default function GPSTab({ isRecording, trips, navigation, setNavigation, 
         </div>
       )}
 
-      {/* Current Location Info */}
       <div className="glass-card p-4 rounded-2xl flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center">

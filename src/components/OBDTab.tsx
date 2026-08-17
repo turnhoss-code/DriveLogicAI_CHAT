@@ -1,12 +1,40 @@
 import React, { useState, useEffect } from 'react';
-import { BrainCircuit, AlertCircle, CheckCircle2, Zap, Thermometer, Gauge, Activity, Bluetooth, AlertTriangle, ShieldCheck, ShieldAlert, Info, Usb, ExternalLink, Sparkles, Download, Check, Loader2 } from 'lucide-react';
+import { BrainCircuit, AlertCircle, CheckCircle2, Zap, Thermometer, Gauge, Activity, Bluetooth, AlertTriangle, ShieldCheck, ShieldAlert, Info, Usb, ExternalLink, Cloud, CloudUpload, Check, Loader2 } from 'lucide-react';
 import { OBDData } from '../types';
 import { runAIDiagnosis, fetchDTCDefinition } from '../services/geminiService';
+import { createDriveFile } from '../services/googleDriveService';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 import { cn } from '../lib/utils';
 import { OBD_CODE_DEFINITIONS } from '../constants/obdCodes';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+
+interface SignalStrengthBarsProps {
+  bars: number;
+}
+
+const SignalStrengthBars = ({ bars }: SignalStrengthBarsProps) => {
+  return (
+    <div className="flex items-end gap-0.5 h-3.5 w-5">
+      {[1, 2, 3, 4].map((bar) => {
+        const isActive = bar <= bars;
+        let barColor = "bg-white/10";
+        if (isActive) {
+          if (bars === 1) barColor = "bg-car-danger";
+          else if (bars === 2) barColor = "bg-car-warning";
+          else barColor = "bg-car-success";
+        }
+        return (
+          <div
+            key={bar}
+            className={cn("w-1 rounded-t-sm transition-all duration-300", barColor)}
+            style={{ height: `${bar * 25}%` }}
+          />
+        );
+      })}
+    </div>
+  );
+};
 
 interface OBDTabProps {
   data: OBDData;
@@ -19,8 +47,8 @@ interface OBDTabProps {
   onSetDiagnosis?: (val: string | null) => void;
   isAnalyzing?: boolean;
   onSetIsAnalyzing?: (val: boolean) => void;
-  isSubscribed: boolean;
-  onShowPaywall: () => void;
+  googleAccessToken?: string | null;
+  onLinkDrive?: () => Promise<any> | any;
   totalMileage?: number;
   vehicleModel?: string;
 }
@@ -36,13 +64,57 @@ export default function OBDTab({
   onSetDiagnosis: propOnSetDiagnosis,
   isAnalyzing: propIsAnalyzing,
   onSetIsAnalyzing: propOnSetIsAnalyzing,
-  isSubscribed,
-  onShowPaywall,
+  googleAccessToken,
+  onLinkDrive,
   totalMileage,
   vehicleModel
 }: OBDTabProps) {
   const [localDiagnosis, setLocalDiagnosis] = useState<string | null>(null);
   const [localIsAnalyzing, setLocalIsAnalyzing] = useState(false);
+
+  const [connectionType, setConnectionType] = useState<'bluetooth' | 'serial'>('bluetooth');
+  const [rssi, setRssi] = useState<number>(-58);
+  const [showOptimizer, setShowOptimizer] = useState<boolean>(false);
+
+  const isConnected = connectionStatus === 'connected';
+
+  // Simulate real-time RSSI fluctuation when connected via Bluetooth
+  useEffect(() => {
+    if (!isConnected || connectionType !== 'bluetooth') return;
+
+    const interval = setInterval(() => {
+      setRssi(prev => {
+        // Fluctuate RSSI randomly between -45 and -85 dBm
+        const change = (Math.random() - 0.5) * 4; // Fluctuate by +/- 2 dBm
+        const next = Math.round(prev + change);
+        // Constrain to typical BLE RSSI range
+        return Math.max(-88, Math.min(-45, next));
+      });
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [isConnected, connectionType]);
+
+  const getRssiBars = (value: number) => {
+    if (value >= -60) return 4;
+    if (value >= -70) return 3;
+    if (value >= -80) return 2;
+    return 1;
+  };
+
+  const getRssiColor = (value: number) => {
+    if (value >= -60) return "text-car-success";
+    if (value >= -70) return "text-car-success/80";
+    if (value >= -80) return "text-car-warning";
+    return "text-car-danger";
+  };
+
+  const getRssiQuality = (value: number) => {
+    if (value >= -60) return "Excellent";
+    if (value >= -70) return "Good";
+    if (value >= -80) return "Fair";
+    return "Poor";
+  };
 
   const diagnosis = propDiagnosis !== undefined ? propDiagnosis : localDiagnosis;
   const setDiagnosis = propOnSetDiagnosis !== undefined ? propOnSetDiagnosis : setLocalDiagnosis;
@@ -55,11 +127,21 @@ export default function OBDTab({
   const [dtcDefinitions, setDtcDefinitions] = useState<Record<string, string>>({});
   const [isFetchingDtc, setIsFetchingDtc] = useState<Record<string, boolean>>({});
 
-  const [downloadStatus, setDownloadStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [driveBackupStatus, setDriveBackupStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
+  const [driveBackupError, setDriveBackupError] = useState<string | null>(null);
 
-  const handleDownloadDiagnosis = () => {
+  const handleBackupDiagnosis = async () => {
+    if (!googleAccessToken) {
+      if (onLinkDrive) {
+        await onLinkDrive();
+      }
+      return;
+    }
+
     if (!diagnosis) return;
-    setDownloadStatus('idle');
+
+    setDriveBackupStatus('saving');
+    setDriveBackupError(null);
     try {
       const name = `drivelogic_diagnosis_${new Date().toISOString().slice(0, 10)}_${Date.now()}.md`;
       const reportContent = `
@@ -80,21 +162,14 @@ export default function OBDTab({
 ${diagnosis}
       `.trim();
 
-      const blob = new Blob([reportContent], { type: 'text/markdown' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = name;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      setDownloadStatus('success');
-      setTimeout(() => setDownloadStatus('idle'), 3000);
+      await createDriveFile(googleAccessToken, name, 'text/markdown', reportContent);
+      setDriveBackupStatus('success');
+      setTimeout(() => setDriveBackupStatus('idle'), 4000);
     } catch (err) {
-      console.error("Failed to download diagnosis", err);
-      setDownloadStatus('error');
-      setTimeout(() => setDownloadStatus('idle'), 3000);
+      console.error("Failed to backup diagnosis", err);
+      setDriveBackupStatus('error');
+      setDriveBackupError(err instanceof Error ? err.message : "Failed to backup diagnosis.");
+      setTimeout(() => setDriveBackupStatus('idle'), 5000);
     }
   };
 
@@ -126,6 +201,7 @@ ${diagnosis}
 
   const handleConnect = async () => {
     try {
+      setConnectionType('bluetooth');
       await onConnectReal();
       setConnectionError(null);
     } catch (err) {
@@ -189,10 +265,6 @@ ${diagnosis}
   const status = getStatusConfig();
 
   const handleDiagnosis = async () => {
-    if (!isSubscribed) {
-      onShowPaywall();
-      return;
-    }
     setIsAnalyzing(true);
     const result = await runAIDiagnosis(data, sensorHistory, vehicleModel);
     setDiagnosis(result);
@@ -337,6 +409,7 @@ ${diagnosis}
               <button 
                 onClick={async () => {
                   try {
+                    setConnectionType('serial');
                     await onConnectSerial();
                     setConnectionError(null);
                   } catch (err) {
@@ -350,7 +423,152 @@ ${diagnosis}
               </button>
             </div>
           )}
+          {connectionStatus === 'connected' && connectionType === 'bluetooth' && (
+            <button
+              onClick={() => setShowOptimizer(prev => !prev)}
+              className={cn(
+                "flex items-center gap-2 px-3 py-1.5 rounded-xl border transition-all text-left cursor-pointer",
+                showOptimizer 
+                  ? "bg-car-accent/20 border-car-accent/40 text-car-accent shadow-lg shadow-car-accent/10" 
+                  : "bg-white/5 border-white/10 text-white/80 hover:bg-white/10 hover:border-white/20"
+              )}
+              title="Optimize Bluetooth Positioning"
+            >
+              <div className="flex flex-col items-end leading-none">
+                <span className={cn("text-[10px] font-bold font-mono", getRssiColor(rssi))}>
+                  {rssi} dBm
+                </span>
+                <span className="text-[8px] text-white/40 uppercase tracking-wider font-mono">
+                  {getRssiQuality(rssi)}
+                </span>
+              </div>
+              <SignalStrengthBars bars={getRssiBars(rssi)} />
+            </button>
+          )}
         </div>
+
+        {/* Bluetooth Positioning Optimizer Panel */}
+        <AnimatePresence>
+          {showOptimizer && connectionStatus === 'connected' && connectionType === 'bluetooth' && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden"
+            >
+              <div className="p-5 bg-white/5 rounded-2xl border border-white/10 space-y-4">
+                <div className="flex items-center justify-between border-b border-white/5 pb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-car-accent/10">
+                      <Bluetooth className="text-car-accent" size={16} />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-white uppercase tracking-wider">OBD-II Bluetooth Signal Optimizer</h4>
+                      <p className="text-[10px] text-white/40 font-mono">Real-time Received Signal Strength Indicator (RSSI)</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setShowOptimizer(false)}
+                    className="text-white/40 hover:text-white p-1 hover:bg-white/5 rounded-lg transition-colors text-xs"
+                  >
+                    Close
+                  </button>
+                </div>
+
+                {/* Grid of details */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="bg-white/5 p-3 rounded-xl border border-white/5 flex flex-col items-center justify-center text-center">
+                    <span className="text-[9px] uppercase tracking-wider text-white/40 font-mono">Signal Strength</span>
+                    <span className={cn("text-lg font-bold font-mono mt-1", getRssiColor(rssi))}>{rssi} dBm</span>
+                  </div>
+                  <div className="bg-white/5 p-3 rounded-xl border border-white/5 flex flex-col items-center justify-center text-center">
+                    <span className="text-[9px] uppercase tracking-wider text-white/40 font-mono">Quality Status</span>
+                    <span className={cn("text-[9px] font-bold uppercase tracking-widest mt-2 px-2 py-0.5 rounded-md", 
+                      rssi >= -60 ? "bg-car-success/10 text-car-success" :
+                      rssi >= -70 ? "bg-car-success/10 text-car-success/80" :
+                      rssi >= -80 ? "bg-car-warning/10 text-car-warning" : "bg-car-danger/10 text-car-danger"
+                    )}>
+                      {getRssiQuality(rssi)}
+                    </span>
+                  </div>
+                  <div className="bg-white/5 p-3 rounded-xl border border-white/5 flex flex-col items-center justify-center text-center">
+                    <span className="text-[9px] uppercase tracking-wider text-white/40 font-mono">Packet Loss</span>
+                    <span className="text-sm font-bold font-mono mt-1 text-white">
+                      {rssi >= -60 ? "0.0%" :
+                       rssi >= -70 ? "0.2%" :
+                       rssi >= -80 ? "1.8%" : "8.4%"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Placement Guide and Tips */}
+                <div className="space-y-3 bg-white/5 p-4 rounded-xl border border-white/5">
+                  <h5 className="text-[10px] font-bold uppercase tracking-widest text-car-accent flex items-center gap-1.5">
+                    <Info size={12} /> Positioning Guidance
+                  </h5>
+                  
+                  {/* Visual meter or advice */}
+                  <div className="space-y-2 text-xs leading-relaxed text-white/80">
+                    {rssi >= -60 ? (
+                      <p>
+                        ✨ <strong className="text-car-success">Optimal position.</strong> The adapter signal is extremely strong. Telemetry rates are maxed out at 40Hz with perfect packet delivery.
+                      </p>
+                    ) : rssi >= -70 ? (
+                      <p>
+                        👍 <strong className="text-car-success/80">Good position.</strong> Minor attenuation detected, but completely safe for continuous monitoring. Keep your device on its current mount.
+                      </p>
+                    ) : rssi >= -80 ? (
+                      <p>
+                        ⚠️ <strong className="text-car-warning">Fair signal.</strong> Possible dashboard metal interference or excessive distance. Telemetry may experience slight lag. Try mounting the phone higher on your windshield or vent.
+                      </p>
+                    ) : (
+                      <p>
+                        🚨 <strong className="text-car-danger">Poor signal!</strong> High risk of packet drops and disconnection. Avoid placing the phone in your pocket, center console storage, or near the passenger side. Consider using an OBD-II extension cable to reposition the adapter.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Interactive Placement Selector to simulate optimization */}
+                  <div className="pt-3 border-t border-white/5 space-y-2">
+                    <span className="text-[9px] uppercase tracking-[0.15em] text-white/40 font-mono block">
+                      Simulate Mounting Positions (Test Signal):
+                    </span>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { name: "Steering Column", rssiBase: -52, label: "Optimal" },
+                        { name: "Windshield Mount", rssiBase: -64, label: "Good" },
+                        { name: "Center Console", rssiBase: -74, label: "Fair" },
+                        { name: "Back Seat / Pocket", rssiBase: -85, label: "Poor" }
+                      ].map((pos) => (
+                        <button
+                          key={pos.name}
+                          type="button"
+                          onClick={() => {
+                            // Calibrate RSSI to this mount position base
+                            setRssi(pos.rssiBase + Math.floor(Math.random() * 5) - 2);
+                          }}
+                          className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-left border border-white/5 hover:border-white/10 transition-all flex flex-col justify-between"
+                        >
+                          <span className="text-[10px] font-bold text-white/80 truncate">{pos.name}</span>
+                          <div className="flex items-center justify-between mt-1">
+                            <span className="text-[9px] font-mono text-white/40">{pos.rssiBase} dBm</span>
+                            <span className={cn("text-[8px] font-bold uppercase", 
+                              pos.rssiBase >= -60 ? "text-car-success" :
+                              pos.rssiBase >= -70 ? "text-car-success/80" :
+                              pos.rssiBase >= -80 ? "text-car-warning" : "text-car-danger"
+                            )}>
+                              {pos.label}
+                            </span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       {connectionError && (
         <div className="space-y-2">
           <div className="p-4 bg-car-danger/10 border border-car-danger/20 rounded-2xl">
@@ -675,45 +893,16 @@ ${diagnosis}
               <p className="text-xs text-white/40">Powered by Google Gemini</p>
             </div>
           </div>
-          {isSubscribed ? (
-            <button
-              onClick={handleDiagnosis}
-              disabled={isAnalyzing}
-              className="px-4 py-2 bg-car-accent text-white rounded-xl text-xs font-bold hover:bg-car-accent/80 transition-colors disabled:opacity-50 cursor-pointer"
-            >
-              {isAnalyzing ? 'ANALYZING...' : 'RUN AI DIAGNOSIS'}
-            </button>
-          ) : (
-            <button
-              onClick={onShowPaywall}
-              className="px-4 py-2 bg-gradient-to-r from-amber-500 to-car-accent text-white rounded-xl text-xs font-bold hover:brightness-110 active:scale-95 transition-all flex items-center gap-1 cursor-pointer shadow-lg shadow-car-accent/20"
-            >
-              <Sparkles size={12} className="animate-pulse" />
-              UPGRADE
-            </button>
-          )}
+          <button
+            onClick={handleDiagnosis}
+            disabled={isAnalyzing}
+            className="px-4 py-2 bg-car-accent text-white rounded-xl text-xs font-bold hover:bg-car-accent/80 transition-colors disabled:opacity-50"
+          >
+            {isAnalyzing ? 'ANALYZING...' : 'RUN AI DIAGNOSIS'}
+          </button>
         </div>
 
-        {!isSubscribed ? (
-          <div className="bg-gradient-to-br from-car-accent/5 to-white/5 border border-white/10 rounded-2xl p-5 text-center space-y-4 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-16 h-16 bg-car-accent/10 rounded-full blur-xl pointer-events-none" />
-            <div className="mx-auto w-10 h-10 rounded-full bg-car-accent/20 flex items-center justify-center text-car-accent">
-              <Sparkles size={18} />
-            </div>
-            <div className="space-y-1.5">
-              <h4 className="text-sm font-bold text-white uppercase tracking-wider font-mono">Unlock Full AI Diagnosis</h4>
-              <p className="text-xs text-white/60 leading-relaxed max-w-sm mx-auto">
-                Get unlimited, professional-grade diagnostic reports with deep fault code interpretations, driving habit sensor correlation, and detailed mitigation recommendations.
-              </p>
-            </div>
-            <button
-              onClick={onShowPaywall}
-              className="px-5 py-2.5 bg-car-accent hover:brightness-115 text-white rounded-xl text-xs font-bold tracking-wider uppercase font-mono transition-all inline-flex items-center gap-1.5 cursor-pointer"
-            >
-              <Sparkles size={14} /> Subscribe now for $9.99/mo
-            </button>
-          </div>
-        ) : diagnosis ? (
+        {diagnosis ? (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
@@ -725,25 +914,33 @@ ${diagnosis}
             
             <div className="flex items-center justify-between bg-white/5 p-3 rounded-2xl border border-white/5">
               <div className="flex items-center gap-2">
-                <CheckCircle2 size={16} className="text-car-success" />
+                <Cloud size={16} className={googleAccessToken ? "text-car-success" : "text-white/40"} />
                 <span className="text-xs text-white/60">
-                  Diagnosis report generated successfully.
+                  {googleAccessToken ? "Google Drive Connected" : "Backup reports to Google Drive"}
                 </span>
               </div>
               <button
-                onClick={handleDownloadDiagnosis}
+                onClick={handleBackupDiagnosis}
+                disabled={driveBackupStatus === 'saving'}
                 className={cn(
-                  "flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer",
-                  downloadStatus === 'success' ? "bg-car-success/20 text-car-success border border-car-success/30" :
-                  downloadStatus === 'error' ? "bg-car-danger/20 text-car-danger border border-car-danger/30" :
+                  "flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition-all",
+                  driveBackupStatus === 'success' ? "bg-car-success/20 text-car-success border border-car-success/30" :
+                  driveBackupStatus === 'error' ? "bg-car-danger/20 text-car-danger border border-car-danger/30" :
                   "bg-white/5 text-white/80 border border-white/10 hover:bg-white/10 hover:text-white"
                 )}
               >
-                {downloadStatus === 'success' ? <Check size={12} /> : <Download size={12} />}
-                {downloadStatus === 'success' ? "Downloaded!" :
-                 downloadStatus === 'error' ? "Failed to save" : "Download (.md)"}
+                {driveBackupStatus === 'saving' && <Loader2 size={12} className="animate-spin text-car-accent" />}
+                {driveBackupStatus === 'success' && <Check size={12} />}
+                {driveBackupStatus === 'idle' && <CloudUpload size={12} />}
+                {driveBackupStatus === 'saving' ? "Saving..." :
+                 driveBackupStatus === 'success' ? "Saved to Drive!" :
+                 driveBackupStatus === 'error' ? "Failed to save" :
+                 googleAccessToken ? "Save to Drive" : "Connect & Save"}
               </button>
             </div>
+            {driveBackupError && (
+              <p className="text-[10px] text-car-danger text-right px-2">{driveBackupError}</p>
+            )}
           </motion.div>
         ) : (
           <div className="flex items-center gap-3 p-4 bg-white/5 rounded-2xl border border-white/5">

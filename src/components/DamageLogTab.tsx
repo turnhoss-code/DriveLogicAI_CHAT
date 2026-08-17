@@ -1,10 +1,11 @@
-import React, { useState, useCallback } from 'react';
-import { Activity, History, AlertTriangle, ChevronRight, Clock, MapPin, ChevronDown, Download, Key, Check } from 'lucide-react';
+import React, { useState, useCallback, useEffect } from 'react';
+import { Activity, History, AlertTriangle, ChevronRight, Clock, MapPin, ChevronDown, Download, Key, Cloud, CloudUpload, Check, Loader2 } from 'lucide-react';
 import { DamagePoint, Trip, SensorPoint } from '../types';
 import { LineChart, Line, ResponsiveContainer, YAxis, XAxis, Tooltip, AreaChart, Area } from 'recharts';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
-import { GoogleMap, Polyline, Marker, InfoWindow } from '@react-google-maps/api';
+import { Map, AdvancedMarker, useMap, useMapsLibrary, InfoWindow } from '@vis.gl/react-google-maps';
+import { createDriveFile } from '../services/googleDriveService';
 
 interface DamageLogTabProps {
   score: number;
@@ -15,13 +16,9 @@ interface DamageLogTabProps {
   mapsApiKey: string;
   isLoaded: boolean;
   onUpdateTrip: (trip: Trip) => void;
+  googleAccessToken?: string | null;
+  onLinkDrive?: () => Promise<any> | any;
 }
-
-const mapContainerStyle = {
-  width: '100%',
-  height: '100%',
-  borderRadius: '0.75rem'
-};
 
 const darkMapStyles = [
   { elementType: "geometry", stylers: [{ color: "#242f3e" }] },
@@ -44,8 +41,42 @@ const darkMapStyles = [
   { featureType: "water", elementType: "labels.text.stroke", stylers: [{ color: "#17263c" }] },
 ];
 
+function TripPolyline({ path }: { path: { lat: number, lng: number }[] }) {
+  const map = useMap();
+  const mapsLib = useMapsLibrary('maps');
+  
+  useEffect(() => {
+    if (!map || !mapsLib || !path.length) return;
+    
+    const polyline = new mapsLib.Polyline({
+      path,
+      strokeColor: '#3b82f6',
+      strokeOpacity: 0.8,
+      strokeWeight: 4,
+    });
+    
+    polyline.setMap(map);
+    return () => polyline.setMap(null);
+  }, [map, mapsLib, path]);
+  
+  return null;
+}
 
-export default function DamageLogTab({ score, history, sensorHistory, trips, isRecording, mapsApiKey, isLoaded, onUpdateTrip }: DamageLogTabProps) {
+function BoundsFitter({ path }: { path: { lat: number, lng: number }[] }) {
+  const map = useMap();
+  const coreLib = useMapsLibrary('core');
+
+  useEffect(() => {
+    if (!map || !coreLib || !path.length) return;
+    const bounds = new coreLib.LatLngBounds();
+    path.forEach(p => bounds.extend(p));
+    map.fitBounds(bounds, { top: 20, right: 20, bottom: 20, left: 20 });
+  }, [map, coreLib, path]);
+
+  return null;
+}
+
+export default function DamageLogTab({ score, history, sensorHistory, trips, isRecording, mapsApiKey, isLoaded, onUpdateTrip, googleAccessToken, onLinkDrive }: DamageLogTabProps) {
   const [expandedTripId, setExpandedTripId] = useState<string | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<{ type: string, timestamp: number, lat: number, lng: number } | null>(null);
   const [newMarkerPos, setNewMarkerPos] = useState<{ lat: number, lng: number } | null>(null);
@@ -56,6 +87,35 @@ export default function DamageLogTab({ score, history, sensorHistory, trips, isR
     setNewMarkerPos(null);
     setMarkerNote('');
   }, [expandedTripId]);
+
+  const [driveBackupStatus, setDriveBackupStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
+  const [driveBackupError, setDriveBackupError] = useState<string | null>(null);
+
+  const handleBackupTrips = async () => {
+    if (!googleAccessToken) {
+      if (onLinkDrive) {
+        await onLinkDrive();
+      }
+      return;
+    }
+
+    if (trips.length === 0) return;
+
+    setDriveBackupStatus('saving');
+    setDriveBackupError(null);
+    try {
+      const name = `drivelogic_trips_backup_${new Date().toISOString().slice(0, 10)}_${Date.now()}.json`;
+      const content = JSON.stringify(trips, null, 2);
+      await createDriveFile(googleAccessToken, name, 'application/json', content);
+      setDriveBackupStatus('success');
+      setTimeout(() => setDriveBackupStatus('idle'), 4000);
+    } catch (err) {
+      console.error("Failed to backup trips", err);
+      setDriveBackupStatus('error');
+      setDriveBackupError(err instanceof Error ? err.message : "Failed to backup trips.");
+      setTimeout(() => setDriveBackupStatus('idle'), 5000);
+    }
+  };
 
   const handleAddMarker = (trip: Trip) => {
     if (!newMarkerPos || !markerNote.trim()) return;
@@ -154,72 +214,54 @@ export default function DamageLogTab({ score, history, sensorHistory, trips, isR
     const startPoint = path[0];
     const endPoint = path[path.length - 1];
 
-    const onLoadMap = (map: google.maps.Map) => {
-      const bounds = new google.maps.LatLngBounds();
-      path.forEach(p => bounds.extend(p));
-      map.fitBounds(bounds, { top: 20, right: 20, bottom: 20, left: 20 });
-    };
-
     return (
       <div className="relative w-full h-full rounded-xl overflow-hidden">
-        <GoogleMap
-          mapContainerStyle={mapContainerStyle}
-          options={{
-            styles: darkMapStyles,
-            disableDefaultUI: true,
-            gestureHandling: 'cooperative',
-          }}
-          onLoad={onLoadMap}
+        <Map
+          defaultCenter={startPoint}
+          defaultZoom={12}
+          gestureHandling={'greedy'}
+          disableDefaultUI={true}
+          mapId={`damage_tab_map_${trip.id}`}
+          styles={darkMapStyles}
+          internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
           onClick={(e) => {
-            if (e.latLng) {
-              setNewMarkerPos({ lat: e.latLng.lat(), lng: e.latLng.lng() });
+            if (e.detail.latLng) {
+              setNewMarkerPos({ lat: e.detail.latLng.lat, lng: e.detail.latLng.lng });
             }
           }}
         >
-          <Polyline
-            path={path}
-            options={{
-              strokeColor: "#3b82f6",
-              strokeOpacity: 0.8,
-              strokeWeight: 4,
-            }}
-          />
-          <Marker
-            position={startPoint}
-            icon={{
-              path: google.maps.SymbolPath.CIRCLE,
-              scale: 6,
-              fillColor: "#10b981",
-              fillOpacity: 1,
-              strokeWeight: 2,
-              strokeColor: "#FFFFFF",
-            }}
-          />
-          <Marker
-            position={endPoint}
-            icon={{
-              path: google.maps.SymbolPath.CIRCLE,
-              scale: 6,
-              fillColor: "#ef4444",
-              fillOpacity: 1,
-              strokeWeight: 2,
-              strokeColor: "#FFFFFF",
-            }}
-          />
+          <TripPolyline path={path} />
+          <BoundsFitter path={path} />
+          
+          <AdvancedMarker position={startPoint} zIndex={100}>
+            <div style={{
+              width: '12px',
+              height: '12px',
+              backgroundColor: '#10b981',
+              borderRadius: '50%',
+              border: '2px solid white',
+              boxShadow: '0 0 4px rgba(0,0,0,0.5)'
+            }} />
+          </AdvancedMarker>
+
+          <AdvancedMarker position={endPoint} zIndex={100}>
+            <div style={{
+              width: '12px',
+              height: '12px',
+              backgroundColor: '#ef4444',
+              borderRadius: '50%',
+              border: '2px solid white',
+              boxShadow: '0 0 4px rgba(0,0,0,0.5)'
+            }} />
+          </AdvancedMarker>
+
           {events.map((event, idx) => {
             if (!event.location) return null;
+            const color = event.type === 'harsh_braking' ? '#ef4444' : event.type === 'rapid_acceleration' ? '#f59e0b' : '#a855f7';
             return (
-              <Marker
+              <AdvancedMarker
                 key={idx}
                 position={{ lat: event.location.lat, lng: event.location.lng }}
-                icon={{
-                  path: google.maps.SymbolPath.CIRCLE,
-                  scale: 8,
-                  fillColor: event.type === 'harsh_braking' ? '#ef4444' : event.type === 'rapid_acceleration' ? '#f59e0b' : '#a855f7',
-                  fillOpacity: 0.9,
-                  strokeWeight: 2,
-                  strokeColor: "#FFFFFF",
-                }}
                 onClick={() => {
                   setSelectedEvent({
                     type: event.type,
@@ -228,23 +270,25 @@ export default function DamageLogTab({ score, history, sensorHistory, trips, isR
                     lng: event.location!.lng
                   });
                 }}
-              />
+              >
+                <div style={{
+                  width: '16px',
+                  height: '16px',
+                  backgroundColor: color,
+                  borderRadius: '50%',
+                  border: '2px solid white',
+                  boxShadow: '0 0 4px rgba(0,0,0,0.5)',
+                  opacity: 0.9,
+                  cursor: 'pointer'
+                }} />
+              </AdvancedMarker>
             );
           })}
 
-          {/* Custom Markers */}
           {trip.customMarkers?.map((marker, idx) => (
-            <Marker
+            <AdvancedMarker
               key={`custom-${idx}`}
               position={{ lat: marker.lat, lng: marker.lng }}
-              icon={{
-                path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
-                scale: 5,
-                fillColor: "#8b5cf6",
-                fillOpacity: 1,
-                strokeWeight: 2,
-                strokeColor: "#FFFFFF",
-              }}
               onClick={() => {
                 setSelectedEvent({
                   type: `Note: ${marker.note}`,
@@ -253,10 +297,19 @@ export default function DamageLogTab({ score, history, sensorHistory, trips, isR
                   lng: marker.lng
                 });
               }}
-            />
+            >
+              <div style={{
+                width: '10px',
+                height: '10px',
+                backgroundColor: '#8b5cf6',
+                borderRadius: '50%',
+                border: '2px solid white',
+                boxShadow: '0 0 4px rgba(0,0,0,0.5)',
+                cursor: 'pointer'
+              }} />
+            </AdvancedMarker>
           ))}
 
-          {/* New Marker Placement */}
           {newMarkerPos && (
             <InfoWindow
               position={newMarkerPos}
@@ -294,9 +347,7 @@ export default function DamageLogTab({ score, history, sensorHistory, trips, isR
             <InfoWindow
               position={{ lat: selectedEvent.lat, lng: selectedEvent.lng }}
               onCloseClick={() => setSelectedEvent(null)}
-              options={{
-                pixelOffset: new google.maps.Size(0, -10),
-              }}
+              pixelOffset={[0, -10]}
             >
               <div className="p-1 text-black max-w-[200px]">
                 <p className="text-xs font-bold uppercase tracking-tighter mb-1">
@@ -324,7 +375,7 @@ export default function DamageLogTab({ score, history, sensorHistory, trips, isR
               </div>
             </InfoWindow>
           )}
-        </GoogleMap>
+        </Map>
       </div>
     );
   };
@@ -489,16 +540,42 @@ export default function DamageLogTab({ score, history, sensorHistory, trips, isR
               <div className="flex items-center gap-2">
                 <button
                   onClick={exportAllTrips}
-                  className="flex items-center gap-1 px-3 py-1.5 bg-white/5 hover:bg-white/10 rounded-xl text-[10px] uppercase tracking-wider text-white/60 hover:text-white transition-all border border-white/5 hover:border-white/10 cursor-pointer"
+                  className="flex items-center gap-1 px-2 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-[10px] uppercase tracking-wider text-white/60 transition-colors"
                   title="Export all trips as JSON"
                 >
                   <Download size={12} />
                   Export All
                 </button>
+                <button
+                  onClick={handleBackupTrips}
+                  disabled={driveBackupStatus === 'saving'}
+                  className={cn(
+                    "flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] uppercase tracking-wider font-medium transition-colors border",
+                    driveBackupStatus === 'success' ? "bg-car-success/10 border-car-success/20 text-car-success animate-pulse" :
+                    driveBackupStatus === 'error' ? "bg-car-danger/10 border-car-danger/20 text-car-danger" :
+                    "bg-white/5 border-white/5 hover:bg-white/10 text-white/60 hover:text-white"
+                  )}
+                  title={googleAccessToken ? "Backup all trips to Google Drive" : "Connect & Backup trips to Google Drive"}
+                >
+                  {driveBackupStatus === 'saving' ? (
+                    <Loader2 size={12} className="animate-spin text-car-accent" />
+                  ) : driveBackupStatus === 'success' ? (
+                    <Check size={12} />
+                  ) : (
+                    <CloudUpload size={12} />
+                  )}
+                  {driveBackupStatus === 'saving' ? "Saving..." :
+                   driveBackupStatus === 'success' ? "Saved!" :
+                   driveBackupStatus === 'error' ? "Error" :
+                   "Backup to Drive"}
+                </button>
               </div>
             )}
           </div>
         </div>
+        {driveBackupError && (
+          <p className="text-[10px] text-car-danger text-right px-2 mt-1">{driveBackupError}</p>
+        )}
 
         <div className="space-y-3">
           {trips.length === 0 ? (

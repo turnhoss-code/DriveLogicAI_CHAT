@@ -12,24 +12,24 @@ import OBDTab from './components/OBDTab';
 import DamageLogTab from './components/DamageLogTab';
 import GPSTab from './components/GPSTab';
 import FloatingMap from './components/FloatingMap';
-import ChatAssistant, { ChatAssistantHandle } from './components/ChatAssistant';
-import LiveChatAssistant from './components/LiveChatAssistant';
+import LiveChatAssistant, { LiveChatAssistantHandle } from './components/LiveChatAssistant';
 import MaintenanceTab from './components/MaintenanceTab';
 import { runAIDiagnosis } from './services/geminiService';
 import { MaintenanceTask } from './types';
-import { useJsApiLoader } from '@react-google-maps/api';
+import { APIProvider } from '@vis.gl/react-google-maps';
 import { auth, googleProvider, db } from './firebase';
-import { signInWithPopup, onAuthStateChanged, User, signOut, GoogleAuthProvider, createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
+import { signInWithPopup, onAuthStateChanged, User, signOut, GoogleAuthProvider } from 'firebase/auth';
 import { doc, setDoc, getDocFromServer, updateDoc } from 'firebase/firestore';
 import { handleFirestoreError, OperationType } from './lib/firestore';
-import { CreditCard, Sparkles, Lock, ShieldAlert, Check } from 'lucide-react';
+import { GoogleDriveFile, createDriveFile, listDriveFiles, deleteDriveFile, downloadDriveFile } from './services/googleDriveService';
+import { Cloud, CloudUpload, HardDrive, RotateCw, Trash2, FolderSync, Mic } from 'lucide-react';
 
 const DEFAULT_MAPS_KEY = "AIzaSyDX-VRPvfH-AzKUwmtu1DQ9_vzDn4y2f9E";
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
-  const chatAssistantRef = useRef<ChatAssistantHandle>(null);
+  const chatAssistantRef = useRef<LiveChatAssistantHandle>(null);
   const [activeTab, setActiveTab] = useState<'obd' | 'damage' | 'gps' | 'maintenance'>('obd');
   const [obdData, setObdData] = useState<OBDData>({
     rpm: 0,
@@ -92,105 +92,132 @@ export default function App() {
     return localStorage.getItem('ztcd_vehicle_model') || '2023 Toyota Camry';
   });
 
-  const [isSubscribed, setIsSubscribed] = useState(false);
-  const [showPaywall, setShowPaywall] = useState(false);
-  const [isSubscribing, setIsSubscribing] = useState(false);
+  const [googleAccessToken, setGoogleAccessToken] = useState<string | null>(null);
+  const [driveBackups, setDriveBackups] = useState<GoogleDriveFile[]>([]);
+  const [isLoadingBackups, setIsLoadingBackups] = useState(false);
+  const [backupStatusMsg, setBackupStatusMsg] = useState<string | null>(null);
+
   const [loginError, setLoginError] = useState<string | null>(null);
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [isAuthActionLoading, setIsAuthActionLoading] = useState(false);
 
-  const handleSubscribeUser = async () => {
-    if (!user) {
-      setLoginError("You must be logged in to subscribe.");
-      return;
-    }
-    setIsSubscribing(true);
+  const linkGoogleDrive = async () => {
     try {
-      if ((user as any).isDemo) {
-        setIsSubscribed(true);
-        setUser({
-          ...user,
-          isSubscribed: true
-        } as any);
-        setShowPaywall(false);
-        return;
+      setBackupStatusMsg(null);
+      const result = await signInWithPopup(auth, googleProvider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      if (credential?.accessToken) {
+        setGoogleAccessToken(credential.accessToken);
+        setBackupStatusMsg("Connected Google Drive successfully!");
+        setTimeout(() => setBackupStatusMsg(null), 3000);
+        return credential.accessToken;
       }
-
-      const userRef = doc(db, 'users', user.uid);
-      await updateDoc(userRef, {
-        isSubscribed: true,
-        updatedAt: Date.now()
-      });
-      setIsSubscribed(true);
-      setShowPaywall(false);
     } catch (error: any) {
-      console.error("Failed to subscribe", error);
-      handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
-    } finally {
-      setIsSubscribing(false);
-    }
-  };
-
-  const handleUnsubscribeUser = async () => {
-    if (!user) return;
-    setIsSubscribing(true);
-    try {
-      if ((user as any).isDemo) {
-        setIsSubscribed(false);
-        setUser({
-          ...user,
-          isSubscribed: false
-        } as any);
-        return;
-      }
-
-      const userRef = doc(db, 'users', user.uid);
-      await updateDoc(userRef, {
-        isSubscribed: false,
-        updatedAt: Date.now()
-      });
-      setIsSubscribed(false);
-    } catch (error: any) {
-      console.error("Failed to unsubscribe", error);
-    } finally {
-      setIsSubscribing(false);
-    }
-  };
-
-  const handleEmailPasswordAuth = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoginError(null);
-    setIsAuthActionLoading(true);
-
-    if (!email || !password) {
-      setLoginError("Please enter both email and password.");
-      setIsAuthActionLoading(false);
-      return;
-    }
-
-    try {
-      if (authMode === 'register') {
-        await createUserWithEmailAndPassword(auth, email, password);
+      console.error("Failed to link Google Drive", error);
+      if (error?.code === 'auth/cancelled-popup-request' || error?.code === 'auth/popup-blocked' || error?.message?.includes('INTERNAL ASSERTION FAILED') || error?.message?.includes('popup-blocked')) {
+        setBackupStatusMsg("Google Drive connection failed: Please open this app in a new tab to bypass iframe security limits.");
       } else {
-        await signInWithEmailAndPassword(auth, email, password);
+        setBackupStatusMsg(`Connection failed: ${error?.message || error}`);
       }
-    } catch (error: any) {
-      console.error("Auth action failed", error);
-      let errMsg = error.message;
-      if (error.code === 'auth/weak-password') {
-        errMsg = "Password should be at least 6 characters.";
-      } else if (error.code === 'auth/email-already-in-use') {
-        errMsg = "This email is already in use.";
-      } else if (error.code === 'auth/invalid-credential') {
-        errMsg = "Invalid email or password.";
-      } else if (error.code === 'auth/network-request-failed') {
-        errMsg = "Network request failed. This may be due to ad blockers or running inside the preview iframe. Please open the app in a new tab.";
-      }
-      setLoginError(errMsg);
+    }
+    return null;
+  };
+
+  const loadDriveBackups = async (token?: string) => {
+    const activeToken = token || googleAccessToken;
+    if (!activeToken) return;
+    setIsLoadingBackups(true);
+    try {
+      const files = await listDriveFiles(activeToken);
+      setDriveBackups(files);
+    } catch (error) {
+      console.error("Failed to load backups", error);
     } finally {
-      setIsAuthActionLoading(false);
+      setIsLoadingBackups(false);
+    }
+  };
+
+  useEffect(() => {
+    if (googleAccessToken) {
+      loadDriveBackups();
+    } else {
+      setDriveBackups([]);
+    }
+  }, [googleAccessToken]);
+
+  const backupAllData = async () => {
+    let token = googleAccessToken;
+    if (!token) {
+      token = await linkGoogleDrive();
+    }
+    if (!token) return;
+
+    setBackupStatusMsg("Creating backup on Google Drive...");
+    try {
+      const backupData = {
+        trips,
+        damageHistory,
+        maintenanceTasks,
+        timestamp: Date.now(),
+        mileage: totalMileage,
+      };
+      const name = `drivelogic_all_backup_${new Date().toISOString().slice(0, 10)}_${Date.now()}.json`;
+      await createDriveFile(token, name, 'application/json', JSON.stringify(backupData, null, 2));
+      setBackupStatusMsg("Backup created successfully!");
+      loadDriveBackups(token);
+      setTimeout(() => setBackupStatusMsg(null), 3000);
+    } catch (error) {
+      console.error("Backup failed", error);
+      setBackupStatusMsg("Backup failed. Please check connection.");
+    }
+  };
+
+  const restoreBackup = async (fileId: string, name: string) => {
+    if (!googleAccessToken) return;
+    const confirmed = window.confirm(`Are you sure you want to restore "${name}"? This will overwrite your current local trips, mileage, and maintenance logs.`);
+    if (!confirmed) return;
+
+    setBackupStatusMsg("Restoring backup...");
+    try {
+      const contentStr = await downloadDriveFile(googleAccessToken, fileId);
+      const data = JSON.parse(contentStr);
+      
+      if (data.trips) {
+        setTrips(data.trips);
+        localStorage.setItem('ztcd_trips', JSON.stringify(data.trips));
+      }
+      if (data.damageHistory) {
+        setDamageHistory(data.damageHistory);
+      }
+      if (data.maintenanceTasks) {
+        setMaintenanceTasks(data.maintenanceTasks);
+        localStorage.setItem('ztcd_maintenance', JSON.stringify(data.maintenanceTasks));
+      }
+      if (data.mileage) {
+        setTotalMileage(data.mileage);
+        localStorage.setItem('ztcd_mileage', data.mileage.toString());
+      }
+      
+      setBackupStatusMsg("Backup restored successfully!");
+      setTimeout(() => setBackupStatusMsg(null), 4000);
+    } catch (error) {
+      console.error("Restore failed", error);
+      setBackupStatusMsg("Failed to restore backup. Invalid file format.");
+    }
+  };
+
+  const deleteBackup = async (fileId: string, name: string) => {
+    if (!googleAccessToken) return;
+    const confirmed = window.confirm(`Are you sure you want to permanently delete "${name}" from Google Drive?`);
+    if (!confirmed) return;
+
+    setBackupStatusMsg("Deleting backup...");
+    try {
+      await deleteDriveFile(googleAccessToken, fileId);
+      setBackupStatusMsg("Backup deleted successfully.");
+      loadDriveBackups();
+      setTimeout(() => setBackupStatusMsg(null), 3000);
+    } catch (error) {
+      console.error("Delete failed", error);
+      setBackupStatusMsg("Failed to delete backup.");
     }
   };
   const [maintenanceTasks, setMaintenanceTasks] = useState<MaintenanceTask[]>(() => {
@@ -242,17 +269,14 @@ export default function App() {
               await setDoc(doc(db, 'users', currentUser.uid), {
                 email: currentUser.email,
                 createdAt: Date.now(),
-                updatedAt: Date.now(),
-                isSubscribed: false
+                updatedAt: Date.now()
               });
-              setIsSubscribed(false);
             } catch (error) {
               handleFirestoreError(error, OperationType.CREATE, `users/${currentUser.uid}`);
             }
           } else {
             const data = userDoc.data();
-            setIsSubscribed(!!data?.isSubscribed);
-            if (data?.trips && Array.isArray(data.trips)) {
+            if (data.trips && Array.isArray(data.trips)) {
               // Merge local trips and firestore trips based on IDs, preferring firestore ones
               setTrips(prev => {
                 const existingIds = new Set(data.trips.map((t: Trip) => t.id));
@@ -270,15 +294,9 @@ export default function App() {
           }
         }
       } else {
-        setUser(prev => {
-          if (prev && (prev as any).isDemo) {
-            setIsSubscribed(!!(prev as any).isSubscribed);
-            return prev;
-          }
-          setIsSubscribed(false);
-          return null;
-        });
+        setUser(prev => (prev && (prev as any).isDemo) ? prev : null);
         setIsAuthLoading(false);
+        setGoogleAccessToken(null);
       }
     });
     return () => unsubscribe();
@@ -292,11 +310,6 @@ export default function App() {
     }, 1000);
     return () => clearTimeout(timer);
   }, [user]);
-
-  const { isLoaded, loadError } = useJsApiLoader({
-    id: 'google-map-script',
-    googleMapsApiKey: apiKeys.maps
-  });
 
   // Simulation logic
   useEffect(() => {
@@ -980,8 +993,6 @@ export default function App() {
       console.error("Login failed", error);
       if (error?.code === 'auth/cancelled-popup-request' || error?.code === 'auth/popup-blocked' || error?.message?.includes('INTERNAL ASSERTION FAILED') || error?.message?.includes('popup-blocked')) {
         setLoginError("Login failed due to browser popup restrictions inside the preview window. Please open this app in a new tab to authenticate successfully.");
-      } else if (error?.code === 'auth/network-request-failed') {
-        setLoginError("Network request failed. This may be due to ad blockers or running inside the preview iframe. Please open the app in a new tab.");
       } else {
         setLoginError(`Login failed: ${error?.message || error}`);
       }
@@ -1009,103 +1020,40 @@ export default function App() {
 
   if (!user) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center max-w-md mx-auto bg-car-bg shadow-2xl p-6 text-center animate-fade-in relative overflow-hidden">
-        {/* Glow decorative effects */}
-        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-72 h-72 bg-car-accent/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="min-h-screen flex flex-col items-center justify-center max-w-md mx-auto bg-car-bg shadow-2xl p-6 text-center animate-fade-in">
+        <h1 className="text-3xl font-bold tracking-tighter text-white mb-2">DriveLogicAI</h1>
+        <p className="text-xs uppercase tracking-[0.2em] text-white/40 font-mono mb-12">Advanced Vehicle Intelligence</p>
         
-        <h1 className="text-3xl font-bold tracking-tighter text-white mb-2 relative z-10">DriveLogicAI</h1>
-        <p className="text-xs uppercase tracking-[0.2em] text-white/40 font-mono mb-8 relative z-10">Advanced Vehicle Intelligence</p>
-        
-        <div className="w-full max-w-sm space-y-6 relative z-10">
-          <form onSubmit={handleEmailPasswordAuth} className="glass-card p-6 rounded-3xl border border-white/10 text-left space-y-4">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-white/80 font-mono text-center">
-              {authMode === 'login' ? 'Sign In' : 'Create Account'}
-            </h3>
-            
-            <div className="space-y-1">
-              <label className="text-[10px] uppercase tracking-wider text-white/40 font-mono">Email Address</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-car-accent transition-colors text-white"
-                required
-              />
-            </div>
-            
-            <div className="space-y-1">
-              <label className="text-[10px] uppercase tracking-wider text-white/40 font-mono">Password</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-car-accent transition-colors text-white"
-                required
-              />
-            </div>
+        <div className="w-full max-w-sm space-y-4">
+          <button
+            onClick={handleLogin}
+            className="w-full flex items-center justify-center gap-3 bg-white text-black py-4 rounded-2xl font-semibold hover:bg-gray-100 transition-colors cursor-pointer"
+          >
+            Sign in with Google
+          </button>
 
-            <button
-              type="submit"
-              disabled={isAuthActionLoading}
-              className="w-full py-3 bg-gradient-to-r from-car-accent to-car-accent/80 hover:brightness-110 active:scale-[0.98] text-white text-xs font-bold rounded-xl transition-all uppercase tracking-wider font-mono flex items-center justify-center gap-2 cursor-pointer animate-none"
-            >
-              {isAuthActionLoading ? (
-                <span className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-              ) : authMode === 'login' ? 'SIGN IN' : 'REGISTER'}
-            </button>
-
-            <div className="text-center pt-2">
-              <button
-                type="button"
-                onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}
-                className="text-[11px] text-car-accent hover:underline font-mono cursor-pointer bg-transparent border-none p-0 outline-none"
-              >
-                {authMode === 'login' ? "Don't have an account? Sign Up" : "Already have an account? Sign In"}
-              </button>
-            </div>
-          </form>
-
-          <div className="relative flex py-2 items-center">
-            <div className="flex-grow border-t border-white/10"></div>
-            <span className="flex-shrink mx-4 text-[10px] text-white/20 font-mono uppercase">or</span>
-            <div className="flex-grow border-t border-white/10"></div>
-          </div>
-
-          <div className="space-y-3">
-            <button
-              onClick={handleLogin}
-              className="w-full flex items-center justify-center gap-3 bg-white text-black py-3.5 rounded-2xl font-semibold hover:bg-gray-100 transition-colors cursor-pointer text-sm"
-            >
-              Sign in with Google
-            </button>
-
-            <button
-              onClick={handleDemoLogin}
-              className="w-full flex items-center justify-center gap-3 bg-white/5 text-white/80 border border-white/10 py-3 rounded-2xl font-semibold hover:bg-white/10 transition-all cursor-pointer text-xs font-mono uppercase tracking-wider"
-            >
-              Continue in Demo Mode
-            </button>
-          </div>
+          <button
+            onClick={handleDemoLogin}
+            className="w-full flex items-center justify-center gap-3 bg-white/5 text-white/80 border border-white/10 py-3.5 rounded-2xl font-semibold hover:bg-white/10 transition-all cursor-pointer text-sm font-mono uppercase tracking-wider"
+          >
+            Continue in Demo Mode
+          </button>
 
           {(loginError || isInIframe) && (
-            <div className="p-4 rounded-2xl bg-white/5 border border-white/10 text-left space-y-2">
+            <div className="p-4 rounded-2xl bg-white/5 border border-white/10 text-left space-y-3">
               <div className="flex gap-2 items-start text-car-accent">
-                <AlertCircle size={14} className="shrink-0 mt-0.5" />
-                <span className="text-[10px] font-bold uppercase tracking-wider font-mono">Authentication Alert</span>
+                <AlertCircle size={16} className="shrink-0 mt-0.5" />
+                <span className="text-xs font-bold uppercase tracking-wider">Iframe Connection Guard</span>
               </div>
-              <p className="text-[10px] text-white/60 leading-relaxed">
-                {loginError || "This application is currently running in a preview iframe. Browsers block Google sign-in popups and cookies inside cross-origin frames. Use Email login, Demo Mode above, or open in a new tab."}
+              <p className="text-[11px] text-white/60 leading-relaxed">
+                {loginError || "This application is currently running in a preview iframe. Browsers block Google sign-in popups and cookies inside cross-origin frames. Use Demo Mode above to test immediately, or open in a new tab."}
               </p>
-              {isInIframe && !loginError && (
-                <button
-                  onClick={() => window.open(window.location.href, '_blank')}
-                  className="w-full py-2 rounded-xl bg-car-accent/25 hover:bg-car-accent/40 border border-car-accent/30 text-car-accent text-[9px] font-mono font-bold transition-all uppercase tracking-wider cursor-pointer text-center"
-                >
-                  Open in New Tab
-                </button>
-              )}
+              <button
+                onClick={() => window.open(window.location.href, '_blank')}
+                className="w-full py-2.5 rounded-xl bg-car-accent/25 hover:bg-car-accent/40 border border-car-accent/30 text-car-accent text-[10px] font-mono font-bold transition-all uppercase tracking-wider cursor-pointer text-center"
+              >
+                Open in New Tab to Sign In
+              </button>
             </div>
           )}
         </div>
@@ -1113,7 +1061,10 @@ export default function App() {
     );
   }
 
+  const isLoaded = !!apiKeys.maps;
+
   return (
+    <APIProvider apiKey={apiKeys.maps} version="weekly">
     <div className="min-h-screen flex flex-col max-w-md mx-auto bg-car-bg shadow-2xl overflow-hidden">
       {/* Header */}
       <motion.header 
@@ -1215,8 +1166,8 @@ export default function App() {
                 onSetDiagnosis={setDiagnosis}
                 isAnalyzing={isAnalyzing}
                 onSetIsAnalyzing={setIsAnalyzing}
-                isSubscribed={isSubscribed}
-                onShowPaywall={() => setShowPaywall(true)}
+                googleAccessToken={googleAccessToken}
+                onLinkDrive={linkGoogleDrive}
                 totalMileage={totalMileage}
                 vehicleModel={vehicleModel}
               />
@@ -1233,6 +1184,8 @@ export default function App() {
                 onUpdateTrip={(updatedTrip) => {
                   setTrips(prev => prev.map(t => t.id === updatedTrip.id ? updatedTrip : t));
                 }}
+                googleAccessToken={googleAccessToken}
+                onLinkDrive={linkGoogleDrive}
               />
             )}
             {activeTab === 'gps' && (
@@ -1264,22 +1217,9 @@ export default function App() {
       </main>
 
       <FloatingMap navigation={navigation} setNavigation={setNavigation} mapsApiKey={apiKeys.maps} isLoaded={isLoaded} />
-
-      <ChatAssistant 
-        ref={chatAssistantRef}
-        onTabChange={(tab) => setActiveTab(tab as any)}
-        onSetNavigation={(from, to) => setNavigation({ from, to, isActive: true })}
-        onDiagnose={handleAIDiagnosis}
-        onToggleRecording={(start) => setIsRecording(start)}
-        speed={obdData.speed}
-        rpm={obdData.rpm}
-        isRecording={isRecording}
-        postCommandActions={postCommandActions}
-        isSimulation={isSimulation}
-        onSetSimulation={setIsSimulation}
-      />
       
       <LiveChatAssistant 
+        ref={chatAssistantRef}
         speed={obdData.speed}
         rpm={obdData.rpm}
         isRecording={isRecording}
@@ -1379,63 +1319,126 @@ export default function App() {
                   <p className="text-[8px] text-white/20">Used for AI diagnostics context</p>
                 </div>
 
-                {/* Premium Subscription Panel */}
-                <div className="space-y-3 bg-gradient-to-br from-amber-500/10 to-car-accent/15 p-4 rounded-xl border border-amber-500/20 relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-16 h-16 bg-amber-500/15 rounded-full blur-xl pointer-events-none" />
+                {/* Google Drive Backup Panel */}
+                <div className="space-y-3 bg-white/5 p-4 rounded-xl border border-white/10">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-[10px] uppercase tracking-widest font-mono text-white/80 flex items-center gap-1.5 font-bold">
-                      <Sparkles size={12} className="text-amber-400 animate-pulse" />
-                      Premium Account Tier
+                    <h3 className="text-[10px] uppercase tracking-widest font-mono text-white/60 flex items-center gap-1.5">
+                      <Cloud size={12} className="text-car-cyan" />
+                      Google Drive Cloud Sync
                     </h3>
-                    {isSubscribed ? (
-                      <span className="text-[9px] bg-amber-500/20 border border-amber-500/40 text-amber-300 px-2.5 py-0.5 rounded-full font-mono flex items-center gap-1 font-bold">
-                        PREMIUM
+                    {googleAccessToken ? (
+                      <span className="text-[9px] bg-car-success/15 border border-car-success/25 text-car-success px-2 py-0.5 rounded-full font-mono flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-car-success animate-pulse" />
+                        ACTIVE
                       </span>
                     ) : (
-                      <span className="text-[9px] bg-white/5 border border-white/10 text-white/40 px-2.5 py-0.5 rounded-full font-mono">
-                        FREE TIER
+                      <span className="text-[9px] bg-white/5 border border-white/10 text-white/40 px-2 py-0.5 rounded-full font-mono">
+                        OFFLINE
                       </span>
                     )}
                   </div>
 
-                  {isSubscribed ? (
+                  {!googleAccessToken ? (
                     <div className="space-y-2">
-                      <p className="text-[10px] text-white/60 leading-relaxed">
-                        Thank you for being a Premium subscriber! You have unlimited, ad-free access to Gemini 1.5 Pro AI vehicle diagnostics, detailed trouble definitions, and custom mitigation timelines.
+                      <p className="text-[10px] text-white/40 leading-relaxed">
+                        Connect your Google Account to back up vehicle diagnostics, trip histories, maintenance schedules, and device settings.
                       </p>
                       <button
-                        onClick={handleUnsubscribeUser}
-                        disabled={isSubscribing}
-                        className="w-full py-2 px-3 bg-white/5 border border-white/10 hover:bg-car-danger/10 hover:text-car-danger hover:border-car-danger/20 text-white/60 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
+                        onClick={linkGoogleDrive}
+                        className="w-full py-2 px-3 bg-gradient-to-r from-car-accent to-car-accent/80 hover:brightness-110 active:scale-[0.98] text-white text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-2"
                       >
-                        {isSubscribing ? (
-                          <span className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                        ) : (
-                          "CANCEL SUBSCRIPTION"
-                        )}
+                        <FolderSync size={14} />
+                        LINK GOOGLE DRIVE
                       </button>
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      <p className="text-[10px] text-white/60 leading-relaxed">
-                        Upgrade to Premium to unlock full deep AI vehicle diagnosis reports, driving habit telemetry correlation, and printable fault mitigation schedules.
-                      </p>
-                      <button
-                        onClick={handleSubscribeUser}
-                        disabled={isSubscribing}
-                        className="w-full py-2.5 px-3 bg-gradient-to-r from-amber-500 to-car-accent hover:brightness-110 active:scale-[0.98] text-white text-xs font-bold rounded-xl shadow-lg shadow-car-accent/15 font-mono uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer"
-                      >
-                        {isSubscribing ? (
-                          <span className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                      <div className="flex gap-2">
+                        <button
+                          onClick={backupAllData}
+                          className="flex-1 py-2 px-3 bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5"
+                        >
+                          <CloudUpload size={14} className="text-car-accent" />
+                          Backup All Data
+                        </button>
+                        <button
+                          onClick={() => loadDriveBackups()}
+                          disabled={isLoadingBackups}
+                          className="py-2 px-3 bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs font-bold rounded-xl transition-all flex items-center justify-center"
+                          title="Refresh backup list"
+                        >
+                          <RotateCw size={14} className={isLoadingBackups ? "animate-spin text-car-cyan" : "text-car-cyan"} />
+                        </button>
+                      </div>
+
+                      {backupStatusMsg && (
+                        <p className="text-[10px] text-car-accent font-mono bg-car-accent/5 py-1 px-2.5 rounded-lg border border-car-accent/10">{backupStatusMsg}</p>
+                      )}
+
+                      <div className="space-y-1.5">
+                        <span className="text-[9px] uppercase tracking-wider text-white/40 font-mono">Available Cloud Backups</span>
+                        
+                        {isLoadingBackups ? (
+                          <div className="text-center py-4 text-xs text-white/30 font-mono">Loading files from Drive...</div>
+                        ) : driveBackups.length === 0 ? (
+                          <div className="text-center py-4 text-[10px] text-white/30 italic bg-black/20 rounded-lg border border-white/5">
+                            No DriveLogic backups found on Google Drive.
+                          </div>
                         ) : (
-                          <>
-                            <Sparkles size={14} className="text-amber-200" />
-                            SUBSCRIBE FOR $9.99/MO
-                          </>
+                          <div className="space-y-1 max-h-[140px] overflow-y-auto pr-1 custom-scrollbar">
+                            {driveBackups.map((file) => (
+                              <div key={file.id} className="flex items-center justify-between bg-black/30 p-2 rounded-lg border border-white/5 hover:border-white/10 transition-colors">
+                                <div className="flex-1 min-w-0 pr-2">
+                                  <p className="text-[10px] font-medium text-white/80 truncate" title={file.name}>
+                                    {file.name}
+                                  </p>
+                                  <p className="text-[8px] text-white/40 font-mono">
+                                    {file.size ? `${(parseInt(file.size)/1024).toFixed(1)} KB` : 'JSON'} • {new Date(file.createdTime).toLocaleDateString()}
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    onClick={() => restoreBackup(file.id, file.name)}
+                                    className="p-1.5 bg-car-success/10 hover:bg-car-success/20 text-car-success rounded-lg transition-colors"
+                                    title="Restore this backup"
+                                  >
+                                    <RotateCw size={10} />
+                                  </button>
+                                  <button
+                                    onClick={() => deleteBackup(file.id, file.name)}
+                                    className="p-1.5 bg-car-danger/10 hover:bg-car-danger/20 text-car-danger rounded-lg transition-colors"
+                                    title="Delete this backup"
+                                  >
+                                    <Trash2 size={10} />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
                         )}
-                      </button>
+                      </div>
                     </div>
                   )}
+                </div>
+
+                {/* Voice Commands List */}
+                <div className="space-y-3 bg-white/5 p-4 rounded-xl border border-white/10">
+                  <h3 className="text-[10px] uppercase tracking-widest font-mono text-white/60 flex items-center gap-1.5">
+                    <Mic size={12} className="text-car-accent" />
+                    Voice Commands Reference
+                  </h3>
+                  <div className="space-y-2 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
+                    <p className="text-[10px] text-white/40 mb-2">Say "Hey Drive Logic" followed by:</p>
+                    <ul className="text-[10px] text-white/80 space-y-1 font-mono list-disc pl-4">
+                      <li>"Navigate to [Destination]"</li>
+                      <li>"Add stop [Waypoint]"</li>
+                      <li>"What's wrong with my car?"</li>
+                      <li>"Diagnose engine"</li>
+                      <li>"Recommend a route"</li>
+                      <li>"Report speed trap"</li>
+                      <li>"Clear navigation"</li>
+                    </ul>
+                  </div>
                 </div>
 
                 <div className="space-y-3 bg-white/5 p-4 rounded-xl border border-white/10">
@@ -1544,106 +1547,6 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
-      
-      {/* Premium Paywall Modal */}
-      <AnimatePresence>
-        {showPaywall && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md"
-          >
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              className="w-full max-w-md bg-gradient-to-br from-car-card to-[#0d0e12] border border-amber-500/30 p-6 rounded-3xl space-y-6 relative overflow-hidden text-center"
-            >
-              {/* Decorative radial glows */}
-              <div className="absolute top-0 right-0 w-32 h-32 bg-car-accent/10 rounded-full blur-2xl pointer-events-none" />
-              <div className="absolute -bottom-8 -left-8 w-32 h-32 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
-
-              <div className="flex justify-end absolute top-4 right-4 z-10">
-                <button 
-                  onClick={() => setShowPaywall(false)}
-                  className="p-2 rounded-full hover:bg-white/5 text-white/40 transition-colors"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-
-              <div className="space-y-2 pt-2">
-                <div className="mx-auto w-12 h-12 rounded-full bg-gradient-to-tr from-amber-500 to-car-accent flex items-center justify-center text-white shadow-lg shadow-car-accent/20 animate-bounce">
-                  <Sparkles size={24} />
-                </div>
-                <h2 className="text-xl font-extrabold tracking-tight text-white">DriveLogicAI Premium</h2>
-                <p className="text-xs text-white/40 font-mono uppercase tracking-[0.2em]">Vehicle Intelligence Upgrade</p>
-              </div>
-
-              <div className="space-y-4 text-left bg-white/5 p-4 rounded-2xl border border-white/5">
-                <h3 className="text-[10px] uppercase tracking-widest text-amber-400 font-mono font-bold">Premium Benefits Included:</h3>
-                
-                <div className="space-y-3">
-                  <div className="flex items-start gap-3">
-                    <div className="p-1.5 bg-amber-500/15 rounded-lg text-amber-400 shrink-0 mt-0.5">
-                      <Sparkles size={14} />
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-white leading-none">Unlimited Gemini Diagnostics</h4>
-                      <p className="text-[10px] text-white/60 leading-relaxed mt-1">Get instant, smart fault interpretations and step-by-step diagnostic correlations.</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start gap-3">
-                    <div className="p-1.5 bg-car-accent/15 rounded-lg text-car-accent shrink-0 mt-0.5">
-                      <CreditCard size={14} />
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-white leading-none">Mitigation Schedules</h4>
-                      <p className="text-[10px] text-white/60 leading-relaxed mt-1">Receive customized maintenance timelines and printable service lists.</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start gap-3">
-                    <div className="p-1.5 bg-car-cyan/15 rounded-lg text-car-cyan shrink-0 mt-0.5">
-                      <Lock size={14} />
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-white leading-none">Real-Time Fault Correlation</h4>
-                      <p className="text-[10px] text-white/60 leading-relaxed mt-1">Correlate sensor telemetry histories with dashboard symbols to prevent damage.</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-4 bg-amber-500/5 rounded-2xl border border-amber-500/10 space-y-1">
-                <span className="text-[10px] font-mono uppercase tracking-wider text-amber-300">Monthly Premium Plan</span>
-                <div className="flex items-baseline justify-center gap-1">
-                  <span className="text-3xl font-extrabold text-white">$9.99</span>
-                  <span className="text-xs text-white/40">/ month</span>
-                </div>
-                <p className="text-[9px] text-white/30">Cancel anytime under Settings modal. Secure checkout.</p>
-              </div>
-
-              <button
-                onClick={handleSubscribeUser}
-                disabled={isSubscribing}
-                className="w-full py-3.5 bg-gradient-to-r from-amber-500 via-car-accent to-car-accent/80 hover:brightness-110 active:scale-[0.98] text-white text-xs font-bold rounded-2xl shadow-xl shadow-car-accent/15 tracking-wider uppercase font-mono transition-all flex items-center justify-center gap-2 cursor-pointer"
-              >
-                {isSubscribing ? (
-                  <span className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                ) : (
-                  <>
-                    <Sparkles size={14} />
-                    ACTIVATE PREMIUM NOW
-                  </>
-                )}
-              </button>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* Bottom Navigation */}
       <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-car-card/80 backdrop-blur-xl border-t border-white/5 p-2 flex justify-around items-center z-50">
@@ -1672,5 +1575,6 @@ export default function App() {
         })}
       </nav>
     </div>
+    </APIProvider>
   );
 }

@@ -75,8 +75,13 @@ async function startServer() {
         { googleSearch: {} }
       ];
 
-      const systemInstruction = `You are an automotive diagnostic specialist who gives driving directions in real-time on a gps map. When possible: recommend alternate routes based on logged trip data, obd2 data and damage scores. You also diagnose vehicles using trip logs and obd2 live data with fault codes.
-You will always: Use short and concise answers when talking in chat with users. Diagnose vehicles using all data available on the web. Complete request within a 99% accuracy.
+      const systemInstruction = `You are an expert automotive diagnostics AI and automotive route optimisation AI. You give driving directions in real-time on a gps map.
+When possible: recommend alternate routes based on logged trip data, obd2 data and damage scores.
+You also diagnose vehicles using trip logs and obd2 live data with fault codes.
+Analyse the provided OBD-II sensor data and give a concise, actionable report: identify any anomalies, likely causes, and recommended actions. Use plain English, avoid jargon, and keep the response under 300 words.
+Use trip logs in conjunction with OBD2 data and stored historical data of the user combined with web data to diagnose the vehicle. Parse all forums, websites and data at your disposal.
+Given historical route data including damage scores and distances, recommend the best route and explain why briefly (under 150 words).
+You will always: Use short and concise answers yes and no when possible. Do NOT introduce yourself or use any intro greeting. Complete request within a 99% accuracy.
 You can help the user change tabs, set navigation, diagnose the vehicle, and toggle recording.
 Vehicle Model: ${contextData?.vehicleModel || 'Unknown'}.
 If they ask for their current speed or RPM, answer them directly based on this context:
@@ -238,17 +243,59 @@ When they say "Start recording" or "Stop recording", use the toggleRecording too
 
   wss.on("connection", async (clientWs) => {
     console.log("WebSocket connected to /live");
+    
+    let session: any = null;
+    let messageQueue: any[] = [];
+    let isReady = false;
+
+    clientWs.on("message", (data) => {
+      try {
+        const parsed = JSON.parse(data.toString());
+        if (!isReady || !session) {
+          messageQueue.push(parsed);
+          return;
+        }
+        if (parsed.audio) {
+          session.sendRealtimeInput({ audio: { mimeType: "audio/pcm;rate=16000", data: parsed.audio } });
+        }
+        if (parsed.text) {
+          session.sendClientContent({
+            turns: [{ role: "user", parts: [{ text: parsed.text }] }],
+            turnComplete: true
+          });
+        }
+        if (parsed.toolResponse) {
+          session.sendToolResponse(parsed.toolResponse);
+        }
+      } catch (err) {
+        console.error("Live API WS message error:", err);
+      }
+    });
+
     try {
-      const session = await ai.live.connect({
+      // Fast ping to check API key billing status
+      await ai.models.generateContent({
+        model: "gemini-3.7-flash",
+        contents: "ping"
+      });
+    } catch (e: any) {
+      console.error("API Key check failed:", e.message);
+      clientWs.send(JSON.stringify({ error: "API Error: " + (e.message || "Credits depleted.") }));
+      clientWs.close();
+      return;
+    }
+
+    try {
+      const connectPromise = ai.live.connect({
         model: "gemini-3.1-flash-live-preview",
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } },
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } },
           },
           outputAudioTranscription: {},
           inputAudioTranscription: {},
-          systemInstruction: "You are an automotive diagnostic specialist who gives driving directions in real-time on a gps map. When possible: recommend alternate routes based on logged trip data, obd2 data and damage scores. You also diagnose vehicles using trip logs and obd2 live data with fault codes. You will always: Use short and concise answers when talking in chat with users. Diagnose vehicles using all data available on the web. Complete request within a 99% accuracy.",
+          systemInstruction: { parts: [{ text: "You are Drive-Logic, an expert automotive diagnostics AI and automotive route optimisation AI. Your very first message must ALWAYS be EXACTLY: 'Hi, I'm Drive-Logic! How can I assist you today?'. You speak with an English woman's accent. You give driving directions in real-time on a gps map. When possible: recommend alternate routes based on logged trip data, obd2 data and damage scores. You also diagnose vehicles using trip logs and obd2 live data with fault codes. Analyse the provided OBD-II sensor data and give a concise, actionable report: identify any anomalies, likely causes, and recommended actions. Use plain English, avoid jargon, and keep the response under 300 words. Use trip logs in conjunction with OBD2 data and stored historical data of the user combined with web data to diagnose the vehicle. Parse all forums, websites and data at your disposal. Given historical route data including damage scores and distances, recommend the best route and explain why briefly. You will always: Use short and concise answers yes and no when possible. Complete request within a 99% accuracy." }] },
           tools: [
             {
               functionDeclarations: [
@@ -298,6 +345,7 @@ When they say "Start recording" or "Stop recording", use the toggleRecording too
         },
         callbacks: {
           onmessage: (message: LiveServerMessage) => {
+            console.log("Got Live API message:", Object.keys(message));
             const serverContent = message.serverContent as any;
             
             // Forward audio parts
@@ -336,24 +384,30 @@ When they say "Start recording" or "Stop recording", use the toggleRecording too
         },
       });
 
-      clientWs.on("message", (data) => {
-        try {
-          const parsed = JSON.parse(data.toString());
-          if (parsed.audio) {
-            session.sendRealtimeInput({
-              audio: { data: parsed.audio, mimeType: "audio/pcm;rate=16000" },
-            });
-          }
-          if (parsed.toolResponse) {
-            session.sendToolResponse(parsed.toolResponse);
-          }
-          if (parsed.text) {
-            session.sendClientContent({ turns: parsed.text });
-          }
-        } catch (err) {
-          console.error("Live API WS message error:", err);
-        }
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error("Connection to Gemini Live API timed out (credits may be depleted).")), 5000);
       });
+
+      session = await Promise.race([connectPromise, timeoutPromise]) as any;
+
+      isReady = true;
+      clientWs.send(JSON.stringify({ ready: true }));
+
+      while (messageQueue.length > 0) {
+        const parsed = messageQueue.shift();
+        if (parsed.audio) {
+          session.sendRealtimeInput({ audio: { mimeType: "audio/pcm;rate=16000", data: parsed.audio } });
+        }
+        if (parsed.text) {
+          session.sendClientContent({
+            turns: [{ role: "user", parts: [{ text: parsed.text }] }],
+            turnComplete: true
+          });
+        }
+        if (parsed.toolResponse) {
+          session.sendToolResponse(parsed.toolResponse);
+        }
+      }
 
       clientWs.on("close", () => {
         console.log("Client disconnected");
