@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectRootManager" version="2">
+    <output url="file://$PROJECT_DIR$/out" />
+  </component>
+  <component name="StoredSessionsInfoStore">
+    <option name="sessions">
+      <list>
+        <SessionInfoState>
+          <option name="id" value="20260629-225220-6b7ee2d3-32e1-4a7f-aeee-7b2b824a7784" />
+          <option name="lastUpdateTimestamp" value="1782787940524" />
+          <option name="responseMode" value="Agent" />
+          <option name="title" value="New Agent Session" />
+          <option name="user" value="guest" />
+        </SessionInfoState>
+        <SessionInfoState>
+          <option name="id" value="20260629-225220-621e1bd2-b351-4036-b0b9-50a08d96f483" />
+          <option name="lastUpdateTimestamp" value="1782787940785" />
+          <option name="responseMode" value="Agent" />
+          <option name="title" value="New Agent Session" />
+          <option name="user" value="turnhoss187@gmail.com" />
+        </SessionInfoState>
+      </list>
+    </option>
+  </component>
+</project>
