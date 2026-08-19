@@ -19,6 +19,20 @@ jobs:
           java-version: '17'
           cache: 'gradle'
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install NPM Dependencies
+        run: npm ci
+
+      - name: Build Web Assets & Sync Capacitor
+        run: |
+          npm run build
+          npx cap sync android
+
       - name: Run Unit Tests & Damage Algorithm Verification
         run: |
           cd android
@@ -53,7 +67,6 @@ jobs:
           fi
 
       - name: Publish to Google Play
-
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
