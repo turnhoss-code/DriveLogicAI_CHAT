@@ -8,6 +8,12 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      GEMINI_API_KEY: ${{ secrets.PROD_GEMINI_API_KEY }}
+      KEYSTORE_BASE64: ${{ secrets.PLAY_RELEASE_KEYSTORE_BASE64 }}
+      KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+      KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+      KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -36,19 +42,21 @@ jobs:
       - name: Run Unit Tests & Damage Algorithm Verification
         run: |
           cd android
-          ./gradlew testProdReleaseUnitTest
+          ./gradlew testProdReleaseUnitTest --no-daemon
 
       - name: Build Release AAB
-        env:
-          GEMINI_API_KEY: ${{ secrets.PROD_GEMINI_API_KEY }}
-          KEYSTORE_BASE64: ${{ secrets.PLAY_RELEASE_KEYSTORE_BASE64 }}
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           cd android
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "Error: PLAY_RELEASE_KEYSTORE_BASE64 secret is missing or empty!"
+            exit 1
+          fi
           echo "$KEYSTORE_BASE64" | base64 --decode > app/release-keystore.jks
-          ./gradlew bundleProdRelease
+          if [ ! -s app/release-keystore.jks ]; then
+            echo "Error: Keystore file is 0 bytes after decoding! Base64 string might be invalid."
+            exit 1
+          fi
+          ./gradlew bundleProdRelease --no-daemon
 
       - name: Upload AAB Artifact
         uses: actions/upload-artifact@v4
