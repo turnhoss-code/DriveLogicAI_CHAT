@@ -19,3 +19,16 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Drive Logic AI ProGuard Rules
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
+
+# Preserve @Keep annotated classes and members (Telemetry/Diagnostic models)
+-keep @androidx.annotation.Keep class * {
+    *;
+}
+
+-keepclassmembers class * {
+    @androidx.annotation.Keep *;
+}

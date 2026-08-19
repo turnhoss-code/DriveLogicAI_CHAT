@@ -2,6 +2,6 @@
 <resources>
     <string name="app_name">DriveLogic AI</string>
     <string name="title_activity_main">DriveLogic AI</string>
-    <string name="package_name">com.DriveLogicAI</string>
-    <string name="custom_url_scheme">com.DriveLogicAI</string>
+    <string name="package_name">com.DriveLogicAI_chat</string>
+    <string name="custom_url_scheme">com.DriveLogicAI_chat</string>
 </resources>
