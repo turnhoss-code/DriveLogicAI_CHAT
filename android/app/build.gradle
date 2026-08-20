@@ -10,8 +10,8 @@ android {
         applicationId "com.DriveLogicAI_chat"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode 2
+        versionName "2.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         def geminiKey = project.hasProperty("GEMINI_API_KEY") ? project.property("GEMINI_API_KEY") : (System.getenv("GEMINI_API_KEY") ?: "")
         buildConfigField "String", "GEMINI_API_KEY", "\"${geminiKey}\""
