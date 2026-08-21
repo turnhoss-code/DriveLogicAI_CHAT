@@ -1076,7 +1076,7 @@ export default function App() {
             chatAssistantRef.current?.toggleMic();
           }
         }}
-        className="p-6 pt-8 flex justify-between items-center border-b border-white/5 bg-car-card/50 backdrop-blur-md sticky top-0 z-50 cursor-grab active:cursor-grabbing"
+        className="shrink-0 p-6 pt-8 flex justify-between items-center border-b border-white/5 bg-car-card/50 backdrop-blur-md sticky top-0 z-50 cursor-grab active:cursor-grabbing"
       >
         <div className="flex items-center gap-3">
           <div className="relative group">

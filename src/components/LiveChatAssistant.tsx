@@ -469,7 +469,11 @@ const LiveChatAssistant = forwardRef<LiveChatAssistantHandle, any>(({
 
     } catch (err: any) {
       console.error(err);
-      setError("Mic permission denied or unavailable.");
+      if (!navigator.mediaDevices) {
+        setError("Mic unavailable. Local network testing requires HTTPS or Capacitor.");
+      } else {
+        setError("Mic permission denied or unavailable.");
+      }
       setActiveSpeechState('idle');
     }
   };
