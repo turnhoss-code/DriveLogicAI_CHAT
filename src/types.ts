@@ -76,3 +76,12 @@ export interface PostCommandActions {
   toggleRecording: 'none' | 'switchGPS' | 'speakStatus';
 }
 
+
+export type Tier = 'free' | 'premium' | 'pro';
+
+export interface UserProfile {
+  uid: string;
+  email: string | null;
+  tier: Tier;
+  diagnosticTokens: number;
+}

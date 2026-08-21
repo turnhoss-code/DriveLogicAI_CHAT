@@ -1,3 +1,4 @@
+import { get, set } from "idb-keyval";
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -6,7 +7,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Activity, Gauge, Map as MapIcon, History, Play, Square, BrainCircuit, AlertTriangle, ChevronRight, Settings, X, Key, Wrench, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { OBDData, Trip, DamagePoint, TripEvent, SensorPoint, NavigationState, PostCommandActions } from './types';
+import { OBDData, Trip, DamagePoint, TripEvent, SensorPoint, NavigationState, PostCommandActions, UserProfile, Tier } from './types';
 import { cn } from './lib/utils';
 import OBDTab from './components/OBDTab';
 import DamageLogTab from './components/DamageLogTab';
@@ -14,6 +15,7 @@ import GPSTab from './components/GPSTab';
 import FloatingMap from './components/FloatingMap';
 import LiveChatAssistant, { LiveChatAssistantHandle } from './components/LiveChatAssistant';
 import MaintenanceTab from './components/MaintenanceTab';
+import SubscriptionModal from './components/SubscriptionModal';
 import { runAIDiagnosis } from './services/geminiService';
 import { MaintenanceTask } from './types';
 import { APIProvider } from '@vis.gl/react-google-maps';
@@ -28,6 +30,7 @@ const DEFAULT_MAPS_KEY = "AIzaSyDX-VRPvfH-AzKUwmtu1DQ9_vzDn4y2f9E";
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const chatAssistantRef = useRef<LiveChatAssistantHandle>(null);
   const [activeTab, setActiveTab] = useState<'obd' | 'damage' | 'gps' | 'maintenance'>('obd');
@@ -56,13 +59,25 @@ export default function App() {
   });
   const [damageScore, setDamageScore] = useState(0);
   const [damageHistory, setDamageHistory] = useState<DamagePoint[]>([]);
-  const [trips, setTrips] = useState<Trip[]>(() => {
-    const saved = localStorage.getItem('ztcd_trips');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [trips, setTrips] = useState<Trip[]>([]);
+  
+  useEffect(() => {
+    // Load trips from IndexedDB instead of localStorage
+    get('ztcd_trips').then((savedTrips) => {
+      if (savedTrips) {
+        setTrips(savedTrips);
+      }
+    });
+  }, []);
+
+  // Save trips to IndexedDB whenever it changes
+  useEffect(() => {
+    set('ztcd_trips', trips).catch(err => console.error("Failed to save trips to DB", err));
+  }, [trips]);
   const [isRecording, setIsRecording] = useState(false);
   const [currentTrip, setCurrentTrip] = useState<Partial<Trip> | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [showSubscription, setShowSubscription] = useState(false);
     const [sensorHistory, setSensorHistory] = useState<SensorPoint[]>([]);
     const [apiKeys, setApiKeys] = useState({
       gemini: localStorage.getItem('ztcd_gemini_api_key') || process.env.GEMINI_API_KEY || '',
@@ -182,7 +197,6 @@ export default function App() {
       
       if (data.trips) {
         setTrips(data.trips);
-        localStorage.setItem('ztcd_trips', JSON.stringify(data.trips));
       }
       if (data.damageHistory) {
         setDamageHistory(data.damageHistory);
@@ -244,54 +258,31 @@ export default function App() {
     ];
   });
 
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
         setUser(currentUser);
         setIsAuthLoading(false);
         
-        // Test firestore connection
+        // Load User Profile
         try {
-          let userDoc;
-          try {
-            userDoc = await getDocFromServer(doc(db, 'users', currentUser.uid));
-          } catch (error) {
-            if (error instanceof Error && error.message.includes('the client is offline')) {
-              console.error("Please check your Firebase configuration.");
-            } else {
-              handleFirestoreError(error, OperationType.GET, `users/${currentUser.uid}`);
-            }
-            return;
-          }
-
+          const userDoc = await getDocFromServer(doc(db, 'users', currentUser.uid));
           if (!userDoc.exists()) {
-            try {
-              await setDoc(doc(db, 'users', currentUser.uid), {
-                email: currentUser.email,
-                createdAt: Date.now(),
-                updatedAt: Date.now()
-              });
-            } catch (error) {
-              handleFirestoreError(error, OperationType.CREATE, `users/${currentUser.uid}`);
-            }
+            const newProfile = {
+              uid: currentUser.uid,
+              email: currentUser.email,
+              tier: 'free',
+              diagnosticTokens: 5,
+              createdAt: Date.now()
+            };
+            await setDoc(doc(db, 'users', currentUser.uid), newProfile);
+            setUserProfile(newProfile as UserProfile);
           } else {
-            const data = userDoc.data();
-            if (data.trips && Array.isArray(data.trips)) {
-              // Merge local trips and firestore trips based on IDs, preferring firestore ones
-              setTrips(prev => {
-                const existingIds = new Set(data.trips.map((t: Trip) => t.id));
-                const uniqueLocalTrips = prev.filter(t => !existingIds.has(t.id));
-                const merged = [...data.trips, ...uniqueLocalTrips].sort((a, b) => b.startTime - a.startTime);
-                return merged;
-              });
-            }
+            setUserProfile(userDoc.data() as UserProfile);
           }
         } catch (error) {
-          if (error instanceof Error && error.message.includes('the client is offline')) {
-            console.error("Please check your Firebase configuration.");
-          } else {
-            handleFirestoreError(error, OperationType.GET, `users/${currentUser.uid}`);
-          }
+          console.error("Profile fetch error:", error);
         }
       } else {
         setUser(prev => (prev && (prev as any).isDemo) ? prev : null);
@@ -451,26 +442,8 @@ export default function App() {
   }, [isRecording]);
 
   useEffect(() => {
-    localStorage.setItem('ztcd_trips', JSON.stringify(trips));
     
-    // Sync to Firestore if user is authenticated
-    if (user && !isAuthLoading && trips.length > 0) {
-      updateDoc(doc(db, 'users', user.uid), {
-        trips: trips,
-        updatedAt: Date.now()
-      }).catch(err => {
-        if (err.code === 'not-found' || (err instanceof Error && err.message.includes('not found'))) {
-          setDoc(doc(db, 'users', user.uid), {
-            email: user.email,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-            trips: trips
-          }, { merge: true }).catch(console.error);
-        } else {
-          console.error("Failed to sync trips to Firestore", err);
-        }
-      });
-    }
+    // Trips are now saved exclusively to IndexedDB via idb-keyval
   }, [trips, user, isAuthLoading]);
 
   useEffect(() => {
@@ -962,13 +935,49 @@ export default function App() {
     }
   };
 
+  
+  const handleUpgradeTier = async (newTier: Tier) => {
+    if (!user) return;
+    const tokens = newTier === 'pro' ? 999999 : newTier === 'premium' ? 50 : 5;
+    try {
+      await updateDoc(doc(db, 'users', user.uid), {
+        tier: newTier,
+        diagnosticTokens: tokens,
+        updatedAt: Date.now()
+      });
+      setUserProfile(prev => prev ? { ...prev, tier: newTier, diagnosticTokens: tokens } : null);
+    } catch (error) {
+      console.error("Failed to upgrade tier", error);
+    }
+  };
+
+
   const handleAIDiagnosis = async () => {
     setActiveTab('obd');
+    
+    if (userProfile && userProfile.tier !== 'pro') {
+      if (userProfile.diagnosticTokens <= 0) {
+        setShowSubscription(true);
+        setDiagnosis("⚠️ Token limit reached. Please upgrade to Premium or Pro to run more diagnostics.");
+        return "Token limit reached. Upgrade required.";
+      }
+    }
+    
     setIsAnalyzing(true);
     try {
       const result = await runAIDiagnosis(obdData, sensorHistory, vehicleModel);
       setDiagnosis(result);
       setIsAnalyzing(false);
+      
+      // Decrement token
+      if (userProfile && userProfile.tier !== 'pro' && userProfile.diagnosticTokens > 0) {
+        const newTokens = userProfile.diagnosticTokens - 1;
+        setUserProfile(prev => prev ? { ...prev, diagnosticTokens: newTokens } : null);
+        if (user) {
+          updateDoc(doc(db, 'users', user.uid), { diagnosticTokens: newTokens }).catch(console.error);
+        }
+      }
+      
       return result;
     } catch (error) {
       setIsAnalyzing(false);
@@ -1232,7 +1241,15 @@ export default function App() {
         onSetSimulation={setIsSimulation}
       />
 
+      
+      <SubscriptionModal 
+        isOpen={showSubscription} 
+        onClose={() => setShowSubscription(false)} 
+        userProfile={userProfile} 
+        onUpgrade={handleUpgradeTier} 
+      />
       {/* Settings Modal */}
+
       <AnimatePresence>
         {showSettings && (
           <motion.div 
@@ -1263,7 +1280,32 @@ export default function App() {
               </div>
 
               <div className="space-y-4">
+                
+                
+                <div className="flex justify-between items-center bg-white/5 border border-white/10 rounded-xl px-4 py-3">
+                  <div className="flex flex-col">
+                    <span className="text-[10px] uppercase tracking-widest text-white/40 font-mono">Current Tier</span>
+                    <span className="font-bold uppercase text-car-accent">{userProfile?.tier || 'Free'}</span>
+                  </div>
+                  <div className="flex flex-col items-end">
+                    <span className="text-[10px] uppercase tracking-widest text-white/40 font-mono">Tokens Left</span>
+                    <span className="font-bold text-white">{userProfile?.tier === 'pro' ? 'Unlimited' : (userProfile?.diagnosticTokens || 0)}</span>
+                  </div>
+                </div>
+
+                <button 
+
+                  className="w-full flex items-center justify-between bg-car-accent/10 border border-car-accent/30 rounded-xl px-4 py-3 hover:bg-car-accent/20 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <Star size={18} className="text-car-accent" />
+                    <span className="font-semibold text-car-accent">Manage Subscription</span>
+                  </div>
+                  <ChevronRight size={18} className="text-car-accent/50" />
+                </button>
+
                 <div className="space-y-2">
+
                   <div className="flex justify-between items-center">
                     <label className="text-[10px] uppercase tracking-widest text-white/40 font-mono flex items-center gap-2">
                       <Key size={10} />
