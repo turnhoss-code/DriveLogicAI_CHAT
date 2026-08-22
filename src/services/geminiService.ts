@@ -4,7 +4,7 @@ import { OBDData, Trip } from "../types";
 
 export const processVoiceCommand = async (text: string, contextData?: { speed: number, rpm: number, isRecording: boolean, vehicleModel?: string }, history?: any[]) => {
   try {
-    const res = await fetch(`${getBaseUrl()}/api/gemini/command", {
+    const res = await fetch(`${getBaseUrl()}/api/gemini/command`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, contextData, history })
@@ -19,7 +19,7 @@ export const processVoiceCommand = async (text: string, contextData?: { speed: n
 
 export const runAIDiagnosis = async (data: OBDData, sensorHistory?: { accel: number, gyro: number, timestamp: number }[], vehicleModel?: string) => {
   try {
-    const res = await fetch(`${getBaseUrl()}/api/gemini/diagnose", {
+    const res = await fetch(`${getBaseUrl()}/api/gemini/diagnose`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ data, sensorHistory, vehicleModel })
@@ -34,7 +34,7 @@ export const runAIDiagnosis = async (data: OBDData, sensorHistory?: { accel: num
 
 export const fetchDTCDefinition = async (code: string) => {
   try {
-    const res = await fetch(`${getBaseUrl()}/api/gemini/dtc", {
+    const res = await fetch(`${getBaseUrl()}/api/gemini/dtc`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ code })
@@ -49,7 +49,7 @@ export const fetchDTCDefinition = async (code: string) => {
 
 export const getRouteRecommendation = async (trips: Trip[]) => {
   try {
-    const res = await fetch(`${getBaseUrl()}/api/gemini/route", {
+    const res = await fetch(`${getBaseUrl()}/api/gemini/route`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ trips })
