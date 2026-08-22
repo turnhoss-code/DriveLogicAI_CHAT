@@ -1031,11 +1031,27 @@ export default function App() {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center max-w-md mx-auto bg-car-bg shadow-2xl p-6 text-center animate-fade-in">
         <h1 className="text-3xl font-bold tracking-tighter text-white mb-2">DriveLogicAI</h1>
-        <p className="text-xs uppercase tracking-[0.2em] text-white/40 font-mono mb-12">Advanced Vehicle Intelligence</p>
+        
+        <p className="text-xs uppercase tracking-[0.2em] text-white/40 font-mono mb-4">Advanced Vehicle Intelligence</p>
+        
+        <div className="w-full max-w-sm mb-8 text-sm text-white/60 text-left bg-white/5 p-4 rounded-xl border border-white/10">
+          <p className="mb-2"><strong>Welcome to DriveLogic AI!</strong></p>
+          <p>This application provides real-time OBD-II vehicle diagnostics, trip GPS tracking, and AI-powered maintenance analysis to keep your car running smoothly.</p>
+        </div>
         
         <div className="w-full max-w-sm space-y-4">
-          <button
-            onClick={handleLogin}
+          
+            className="w-full flex items-center justify-center gap-3 bg-white text-black py-4 rounded-2xl font-semibold hover:bg-gray-100 transition-colors cursor-pointer"
+          >
+            Sign in with Google
+          </button>
+
+          <div className="flex gap-4 justify-center mt-4">
+            <a href="/privacy.html" target="_blank" className="text-xs text-car-cyan hover:underline">Privacy Policy</a>
+            <span className="text-white/20">•</span>
+            <a href="/terms.html" target="_blank" className="text-xs text-car-cyan hover:underline">Terms of Service</a>
+          </div>
+
             className="w-full flex items-center justify-center gap-3 bg-white text-black py-4 rounded-2xl font-semibold hover:bg-gray-100 transition-colors cursor-pointer"
           >
             Sign in with Google
