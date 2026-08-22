@@ -64,11 +64,15 @@ jobs:
           fi
           ./gradlew bundleProdRelease --no-daemon
 
+      - name: Rename AAB with Build Number
+        run: |
+          mv android/app/build/outputs/bundle/prodRelease/app-prod-release.aab android/app/build/outputs/bundle/prodRelease/DriveLogicAI-v2.0-build${{ github.run_number }}.aab
+
       - name: Upload AAB Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-prod-release
-          path: android/app/build/outputs/bundle/prodRelease/app-prod-release.aab
+          name: DriveLogicAI-v2.0-build${{ github.run_number }}
+          path: android/app/build/outputs/bundle/prodRelease/DriveLogicAI-v2.0-build${{ github.run_number }}.aab
           retention-days: 14
 
       - name: Determine Release Track
@@ -85,6 +89,6 @@ jobs:
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: com.DriveLogicAI_chat
-          releaseFiles: android/app/build/outputs/bundle/prodRelease/app-prod-release.aab
+          releaseFiles: android/app/build/outputs/bundle/prodRelease/DriveLogicAI-v2.0-build${{ github.run_number }}.aab
           track: ${{ env.TRACK }}
           mappingFile: android/app/build/outputs/mapping/prodRelease/mapping.txt
