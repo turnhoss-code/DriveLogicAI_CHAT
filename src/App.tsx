@@ -1040,7 +1040,8 @@ export default function App() {
         </div>
         
         <div className="w-full max-w-sm space-y-4">
-          
+          <button
+            onClick={handleLogin}
             className="w-full flex items-center justify-center gap-3 bg-white text-black py-4 rounded-2xl font-semibold hover:bg-gray-100 transition-colors cursor-pointer"
           >
             Sign in with Google
@@ -1051,12 +1052,6 @@ export default function App() {
             <span className="text-white/20">•</span>
             <a href="/terms.html" target="_blank" className="text-xs text-car-cyan hover:underline">Terms of Service</a>
           </div>
-
-            className="w-full flex items-center justify-center gap-3 bg-white text-black py-4 rounded-2xl font-semibold hover:bg-gray-100 transition-colors cursor-pointer"
-          >
-            Sign in with Google
-          </button>
-
           <button
             onClick={handleDemoLogin}
             className="w-full flex items-center justify-center gap-3 bg-white/5 text-white/80 border border-white/10 py-3.5 rounded-2xl font-semibold hover:bg-white/10 transition-all cursor-pointer text-sm font-mono uppercase tracking-wider"
