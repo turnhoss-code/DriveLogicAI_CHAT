@@ -21,6 +21,7 @@
     "@vis.gl/react-google-maps": "^1.9.0",
     "@vitejs/plugin-react": "^5.0.4",
     "clsx": "^2.1.1",
+    "cors": "^2.8.6",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "firebase": "^12.15.0",
@@ -38,6 +39,7 @@
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",
     "@firebase/eslint-plugin-security-rules": "^0.0.2",
+    "@types/cors": "^2.8.19",
     "@types/express": "^4.17.21",
     "@types/google.maps": "^3.65.5",
     "@types/node": "^22.14.0",

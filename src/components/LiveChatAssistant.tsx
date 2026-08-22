@@ -286,12 +286,11 @@ const LiveChatAssistant = forwardRef<LiveChatAssistantHandle, any>(({
       } catch (e) {}
 
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      // Use hosted backend if deployed on Firebase, otherwise local
-      const backendHost = window.location.host.includes('web.app') || window.location.host.includes('firebaseapp.com') 
-        ? 'drivelogic-backend-1052327499631.us-central1.run.app'
-        : window.location.host;
-      const wsProtocol = backendHost === window.location.host ? protocol : 'wss:';
-      const wsUrl = backendHost === 'drivelogic-backend-1052327499631.us-central1.run.app' ? `wss://${window.location.host}/live` : `${wsProtocol}//${backendHost}/live`;
+      // Connect to Render backend if in production, otherwise use localhost for dev
+      const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      const wsUrl = isDev 
+        ? `${protocol}//${window.location.host}/live`
+        : `wss://drivelogicai-chat.onrender.com/live`;
       
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
