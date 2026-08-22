@@ -952,6 +952,17 @@ export default function App() {
   };
 
 
+
+  const handleDeductToken = () => {
+    if (userProfile && userProfile.tier !== 'pro' && userProfile.diagnosticTokens > 0) {
+      const newTokens = userProfile.diagnosticTokens - 1;
+      setUserProfile(prev => prev ? { ...prev, diagnosticTokens: newTokens } : null);
+      if (user) {
+        updateDoc(doc(db, 'users', user.uid), { diagnosticTokens: newTokens }).catch(console.error);
+      }
+    }
+  };
+
   const handleAIDiagnosis = async () => {
     setActiveTab('obd');
     
@@ -1250,6 +1261,9 @@ export default function App() {
         postCommandActions={postCommandActions}
         isSimulation={isSimulation}
         onSetSimulation={setIsSimulation}
+        userProfile={userProfile}
+        onShowSubscription={() => setShowSubscription(true)}
+        onDeductToken={handleDeductToken}
       />
 
       

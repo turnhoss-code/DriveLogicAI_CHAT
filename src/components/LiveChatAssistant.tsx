@@ -18,7 +18,10 @@ const LiveChatAssistant = forwardRef<LiveChatAssistantHandle, any>(({
   onToggleRecording,
   postCommandActions,
   isSimulation,
-  onSetSimulation
+  onSetSimulation,
+  userProfile,
+  onShowSubscription,
+  onDeductToken
 }, ref) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isLive, setIsLive] = useState(false);
