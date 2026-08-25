@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "drivelogicai",
+  "private_key_id": "d062f5aa52189d341b3545d87ca287cf39e69c43",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDDyvYIecuxLDcQ\nwl+pqZcUc8MqqZobeqh748xM9no9OskVU5ob91S5EXD8Vy6CyBZ+3yMSvsrboZhN\nVXvDy565XW2vKi2Ug1F1CSdG//H/mMC6SrGs3RXGQSKIpXbTYXw81+nfRUUykKGa\nEA1Jptdh2FN+RGHHOfSWpGmLsZXP2MGPHEyD8YPdndqL64WN1Sn87enLpYNy7X6C\nzvi2KcojKruilqqGdK+p70Mce9GXmh5yCzXkeNe4/N/VOYOBJq8sJrxsPjnjb9zg\ngxJgRef4o3GentjI1PpBARVkS4WBv6sJHl4j/qbfUEkamdjpEnI5OmYw5fEyDQ7s\n44S1hcK5AgMBAAECggEASL3Up7R8cXAwaykT+ohX6ZDSvzxw1Wm+Q/0Pr75ZDvuS\nrro3RNGgp/trY00OqicleHB1aub4nh3M5Fpwl39EkrC76fq9IXKiZl2GurGnmqMJ\nY40RstwW1WfoqST0XzdWPZKoQLvPKCik6YSyMx1p4t/IsV49h5OoI/mkfvJ06tmC\nP9qpYnFmDKNvQPbnkGKY7ItIuH5/l/BeoCYKHoGcbHmAHGEcFBR1algTR7fi3Ddl\niug6labONIwnFgED46EJBa/KbBIEeIqOVMTVaVTRc4kzerFza7hczxrIvnTXENWL\nzOjs3neYRF2iXvlDKohKNjSsA0NHCf7SsUBH80CnYwKBgQDhYK4ucJ9aHCORDKS7\nZy53v21rxhK9vla2TcXn9S8AK6Hx0npS6j0HGCSoryvX9uatFqDEYfmg4Mr5HXjq\nTTClFoHynzqy3jblrmxhWpyX8aAaNFt5yYJaXxpzxLhTugbkrYbqFJOCubJTksHl\nEyafmzXngzus5njVQE/pyk1mGwKBgQDeZTrislONELjJ5oBSaiDW3phcjCvS1otY\n7/edWguTRFhZdi6kbGjuryQuYHka4z8frmJWUmLT9Oj+7LMi60Sj8wM39RlZSgac\nNEIPUK0jALP7TvAixtKkg6GmjqAjDwl6lXlap3+iwcLrJvYBWShGj3T3S61H9413\n06r7HGtXuwKBgQCkh3LAvkDmhHJGeodrs7iNfLbBnbiiwegFcCNQ4YGtSy0PH0tj\nalKg8jQY3MBSCZF+vG0i0C9vDYu/bo+N5EnlyteUqj8swuIqrDm8nGyC08bAOoap\nEr1RgeoKp4q0vLI5kKBUFC9XmH6hWhqoQ2HH1IP2faw73YhKjYeJMcFtDwKBgCgX\n6ejKq2NoG1hS1NmGxorWMHOm1ZO6F/8dq+9TN3kCPkdKlhgQb05whr5RqCOfylaE\n0rerPKPnqEWlGJp3/bTs76yb5EkDnnN0vGAUdFI2IzxwO7yZSYpdLLxhRB9t65CM\n+AbO4aTO97v7FyihETC/Vh/rJb8usvNiVpXUxslXAoGAHSKGY7vqe/8+RarG+2gh\nvU1Z7gWJkcH09Tu8+o39ns+60u2Nd7wwCoC0Xsz65hwqsqddBo+8ydd2JIrUUOjc\nON3avEf+QNxiyNVeYUOXwFtBrV/PN+44P3q0a21xcxVkxZwwIqPaSMlckJeJG1AH\n+KyGI8Skz8ZnyrM4xbLBpPk=\n-----END PRIVATE KEY-----\n",
+  "client_email": "play-console-publisher@drivelogicai.iam.gserviceaccount.com",
+  "client_id": "117621523305124707462",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/play-console-publisher%40drivelogicai.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
