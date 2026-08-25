@@ -1187,6 +1187,9 @@ export default function App() {
           >
             {activeTab === 'obd' && (
               <OBDTab 
+                userProfile={userProfile}
+                onShowSubscription={() => setShowSubscription(true)}
+                onDeductToken={handleDeductToken} 
                 data={obdData} 
                 isSimulation={isSimulation} 
                 connectionStatus={connectionStatus}

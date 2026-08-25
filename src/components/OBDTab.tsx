@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrainCircuit, AlertCircle, CheckCircle2, Zap, Thermometer, Gauge, Activity, Bluetooth, AlertTriangle, ShieldCheck, ShieldAlert, Info, Usb, ExternalLink, Cloud, CloudUpload, Check, Loader2 } from 'lucide-react';
-import { OBDData } from '../types';
+import { OBDData, UserProfile } from '../types';
 import { runAIDiagnosis, fetchDTCDefinition } from '../services/geminiService';
 import { createDriveFile } from '../services/googleDriveService';
 import { motion, AnimatePresence } from 'motion/react';
@@ -51,6 +51,9 @@ interface OBDTabProps {
   onLinkDrive?: () => Promise<any> | any;
   totalMileage?: number;
   vehicleModel?: string;
+  userProfile?: UserProfile | null;
+  onShowSubscription?: () => void;
+  onDeductToken?: () => Promise<boolean>;
 }
 
 export default function OBDTab({ 
@@ -265,6 +268,18 @@ ${diagnosis}
   const status = getStatusConfig();
 
   const handleDiagnosis = async () => {
+    if (userProfile && userProfile.tier !== "pro" && userProfile.tokens <= 0) {
+      onShowSubscription?.();
+      return;
+    }
+
+    if (onDeductToken) {
+      const success = await onDeductToken();
+      if (!success) {
+        onShowSubscription?.();
+        return;
+      }
+    }
     setIsAnalyzing(true);
     const result = await runAIDiagnosis(data, sensorHistory, vehicleModel);
     setDiagnosis(result);
