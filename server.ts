@@ -1,7 +1,6 @@
 import express from "express";
 import cors from "cors";
 import path from "path";
-import { createServer as createViteServer } from "vite";
 import { WebSocketServer, WebSocket } from "ws";
 import { GoogleGenAI, LiveServerMessage, Modality, Type, ThinkingLevel } from "@google/genai";
 import dotenv from "dotenv";
@@ -9,10 +8,18 @@ dotenv.config({ override: true });
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = parseInt(process.env.PORT || "8080", 10);
   
   app.use(cors());
   app.use(express.json());
+
+  app.get("/health", (req, res) => {
+    res.status(200).send("OK");
+  });
+
+  app.get("/api/health", (req, res) => {
+    res.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -223,6 +230,7 @@ When they say "Start recording" or "Stop recording", use the toggleRecording too
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
