@@ -1,4 +1,4 @@
-const getBaseUrl = () => window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? '' : 'https://drivelogicai-chat.onrender.com';
+const getBaseUrl = () => window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? '' : 'https://drivelogic-backend-436748209599.us-central1.run.app';
 
 import { OBDData, Trip } from "../types";
 

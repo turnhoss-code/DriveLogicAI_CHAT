@@ -293,7 +293,7 @@ const LiveChatAssistant = forwardRef<LiveChatAssistantHandle, any>(({
       const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
       const wsUrl = isDev 
         ? `${protocol}//${window.location.host}/live`
-        : `wss://drivelogicai-chat.onrender.com/live`;
+        : `wss://drivelogic-backend-436748209599.us-central1.run.app/live`;
       
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
