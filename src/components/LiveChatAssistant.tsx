@@ -289,9 +289,9 @@ const LiveChatAssistant = forwardRef<LiveChatAssistantHandle, any>(({
       } catch (e) {}
 
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      // Connect to Render backend if in production, otherwise use localhost for dev
-      const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-      const wsUrl = isDev 
+      const host = window.location.hostname;
+      const isDevOrDirectBackend = host === 'localhost' || host === '127.0.0.1' || host.includes('us-west2.run.app') || host.includes('onrender.com');
+      const wsUrl = isDevOrDirectBackend 
         ? `${protocol}//${window.location.host}/live`
         : `wss://drivelogic-backend-436748209599.us-central1.run.app/live`;
       

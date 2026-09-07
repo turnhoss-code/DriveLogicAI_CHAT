@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "841422503911",
+    "project_id": "cs-poc-pg8le4epxczjhontv-cc3f6",
+    "storage_bucket": "cs-poc-pg8le4epxczjhontv-cc3f6.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:841422503911:android:cc0c677e2cfb870b348742",
+        "android_client_info": {
+          "package_name": "com.DriveLogicAI_chat"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAgylbgLWul82ns-um_fydQX4DX2uUyccM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

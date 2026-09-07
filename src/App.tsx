@@ -19,7 +19,7 @@ import SubscriptionModal from './components/SubscriptionModal';
 import { runAIDiagnosis } from './services/geminiService';
 import { MaintenanceTask } from './types';
 import { APIProvider } from '@vis.gl/react-google-maps';
-import { auth, googleProvider, db } from './firebase';
+import { auth, googleAuthProvider, googleDriveProvider, db } from './firebase';
 import { signInWithPopup, onAuthStateChanged, User, signOut, GoogleAuthProvider } from 'firebase/auth';
 import { doc, setDoc, getDocFromServer, updateDoc } from 'firebase/firestore';
 import { handleFirestoreError, OperationType } from './lib/firestore';
@@ -117,7 +117,7 @@ export default function App() {
   const linkGoogleDrive = async () => {
     try {
       setBackupStatusMsg(null);
-      const result = await signInWithPopup(auth, googleProvider);
+      const result = await signInWithPopup(auth, googleDriveProvider);
       const credential = GoogleAuthProvider.credentialFromResult(result);
       if (credential?.accessToken) {
         setGoogleAccessToken(credential.accessToken);
@@ -1008,7 +1008,7 @@ export default function App() {
   const handleLogin = async () => {
     try {
       setLoginError(null);
-      await signInWithPopup(auth, googleProvider);
+      await signInWithPopup(auth, googleAuthProvider);
     } catch (error: any) {
       console.error("Login failed", error);
       if (error?.code === 'auth/cancelled-popup-request' || error?.code === 'auth/popup-blocked' || error?.message?.includes('INTERNAL ASSERTION FAILED') || error?.message?.includes('popup-blocked')) {
