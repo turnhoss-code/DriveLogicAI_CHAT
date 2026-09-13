@@ -29,7 +29,7 @@ async function startServer() {
 
   // Gemini API Proxy endpoints to secure the key
   app.get("/api/keytest", (req, res) => {
-    res.json({ key: process.env.GEMINI_API_KEY });
+    res.json({ configured: !!process.env.GEMINI_API_KEY });
   });
 
   app.post("/api/gemini/command", async (req, res) => {
@@ -115,7 +115,6 @@ When they say "Start recording" or "Stop recording", use the toggleRecording too
         config: { 
           tools: tools as any,
           systemInstruction,
-          toolConfig: { includeServerSideToolInvocations: true }
         }
       });
 
@@ -219,7 +218,7 @@ When they say "Start recording" or "Stop recording", use the toggleRecording too
         model,
         contents: prompt,
         config: {
-          tools: [{ googleMaps: {} }]
+          tools: [{ googleSearch: {} }]
         }
       });
       res.json({ text: response.text });

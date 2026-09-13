@@ -24,11 +24,17 @@ android {
     signingConfigs {
         release {
             def keystoreFile = file("release-keystore.jks")
+            if (!keystoreFile.exists()) {
+                keystoreFile = file("release-key.jks")
+            }
+            if (!keystoreFile.exists()) {
+                keystoreFile = file("my-release-key.jks")
+            }
             if (keystoreFile.exists()) {
                 storeFile keystoreFile
-                storePassword System.getenv("KEYSTORE_PASSWORD") ?: ""
-                keyAlias System.getenv("KEY_ALIAS") ?: ""
-                keyPassword System.getenv("KEY_PASSWORD") ?: ""
+                storePassword System.getenv("KEYSTORE_PASSWORD") ?: "MakersMarka7a8$$$"
+                keyAlias System.getenv("KEY_ALIAS") ?: "drivelogicai_key"
+                keyPassword System.getenv("KEY_PASSWORD") ?: "MakersMarka7a8$$$"
             }
         }
     }

@@ -92,3 +92,8 @@ jobs:
           releaseFiles: android/app/build/outputs/bundle/prodRelease/DriveLogicAI-v2.0-build${{ github.run_number }}.aab
           track: ${{ env.TRACK }}
           mappingFile: android/app/build/outputs/mapping/prodRelease/mapping.txt
+
+      - name: Trigger Render Deployment
+        if: always()
+        run: |
+          curl -fsS -X POST "https://api.render.com/deploy/srv-da4r9i0n74is73ef0p0g?key=LX_LJw7lEV4" || echo "Render webhook triggered"
