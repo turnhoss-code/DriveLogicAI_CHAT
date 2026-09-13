@@ -5,7 +5,7 @@ import { get, set } from "idb-keyval";
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Activity, Gauge, Map as MapIcon, History, Play, Square, BrainCircuit, AlertTriangle, ChevronRight, Settings, X, Key, Wrench, AlertCircle } from 'lucide-react';
+import { Activity, Gauge, Map as MapIcon, History, Play, Square, BrainCircuit, AlertTriangle, ChevronRight, Settings, X, Key, Wrench, AlertCircle, Star } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { OBDData, Trip, DamagePoint, TripEvent, SensorPoint, NavigationState, PostCommandActions, UserProfile, Tier } from './types';
 import { cn } from './lib/utils';
@@ -953,14 +953,15 @@ export default function App() {
 
 
 
-  const handleDeductToken = () => {
-    if (userProfile && userProfile.tier !== 'pro' && userProfile.diagnosticTokens > 0) {
-      const newTokens = userProfile.diagnosticTokens - 1;
-      setUserProfile(prev => prev ? { ...prev, diagnosticTokens: newTokens } : null);
-      if (user) {
-        updateDoc(doc(db, 'users', user.uid), { diagnosticTokens: newTokens }).catch(console.error);
-      }
+  const handleDeductToken = async (): Promise<boolean> => {
+    if (!userProfile || userProfile.tier === 'pro') return true; // Pro users always pass
+    if (userProfile.diagnosticTokens <= 0) return false; // No tokens left
+    const newTokens = userProfile.diagnosticTokens - 1;
+    setUserProfile(prev => prev ? { ...prev, diagnosticTokens: newTokens } : null);
+    if (user) {
+      updateDoc(doc(db, 'users', user.uid), { diagnosticTokens: newTokens }).catch(console.error);
     }
+    return true;
   };
 
   const handleAIDiagnosis = async () => {
