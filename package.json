@@ -48,8 +48,17 @@
     "autoprefixer": "^10.4.21",
     "esbuild": "^0.28.1",
     "tailwindcss": "^4.1.14",
+<<<<<<< HEAD
     "tsx": "^4.21.0",
     "typescript": "~7.0.2",
+=======
+    "tsx": "^4.23.13",
+    "typescript": "~5.8.2",
+>>>>>>> main
     "vite": "^6.2.0"
+  },
+  "overrides": {
+    "qs": ">=6.16.0",
+    "tar": ">=7.5.22"
   }
 }

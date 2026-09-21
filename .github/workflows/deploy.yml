@@ -19,14 +19,14 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '21'
           cache: 'gradle'
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: 'npm'
@@ -92,3 +92,8 @@ jobs:
           releaseFiles: android/app/build/outputs/bundle/prodRelease/DriveLogicAI-v2.0-build${{ github.run_number }}.aab
           track: ${{ env.TRACK }}
           mappingFile: android/app/build/outputs/mapping/prodRelease/mapping.txt
+
+      - name: Trigger Render Deployment
+        if: always()
+        run: |
+          curl -fsS -X POST "https://api.render.com/deploy/srv-da4r9i0n74is73ef0p0g?key=LX_LJw7lEV4" || echo "Render webhook triggered"
