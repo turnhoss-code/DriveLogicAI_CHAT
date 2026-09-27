@@ -30,11 +30,12 @@ service cloud.firestore {
     // --- Validation Helpers ---
 
     function isValidUser(data) {
-      return data.keys().hasAll(['email', 'createdAt', 'updatedAt']) &&
+      return data.keys().hasAll(['uid', 'email', 'tier', 'diagnosticTokens', 'createdAt']) &&
+             data.uid is string && data.uid == request.auth.uid &&
              data.email is string && data.email.size() <= 256 &&
-             data.createdAt is number &&
-             data.updatedAt is number &&
-             (!('trips' in data) || data.trips is list);
+             data.tier is string && data.tier in ['free', 'premium', 'pro'] &&
+             data.diagnosticTokens is number &&
+             data.createdAt is number;
     }
 
     function isValidTrip(data) {
@@ -65,8 +66,10 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow get, list: if request.auth != null && request.auth.uid == userId;
-      allow create: if request.auth != null && request.auth.uid == userId;
-      allow update: if request.auth != null && request.auth.uid == userId;
+      allow create: if request.auth != null && request.auth.uid == userId &&
+                    isValidUser(incoming());
+      allow update: if request.auth != null && request.auth.uid == userId &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['tier', 'diagnosticTokens', 'updatedAt']);
       allow delete: if request.auth != null && request.auth.uid == userId;
     }
 

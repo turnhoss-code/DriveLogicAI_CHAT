@@ -5,7 +5,7 @@ import { get, set } from "idb-keyval";
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Activity, Gauge, Map as MapIcon, History, Play, Square, BrainCircuit, AlertTriangle, ChevronRight, Settings, X, Key, Wrench, AlertCircle } from 'lucide-react';
+import { Activity, Gauge, Map as MapIcon, History, Play, Square, BrainCircuit, AlertTriangle, ChevronRight, Settings, X, Key, Wrench, AlertCircle, Star } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { OBDData, Trip, DamagePoint, TripEvent, SensorPoint, NavigationState, PostCommandActions, UserProfile, Tier } from './types';
 import { cn } from './lib/utils';
@@ -19,7 +19,7 @@ import SubscriptionModal from './components/SubscriptionModal';
 import { runAIDiagnosis } from './services/geminiService';
 import { MaintenanceTask } from './types';
 import { APIProvider } from '@vis.gl/react-google-maps';
-import { auth, googleProvider, db } from './firebase';
+import { auth, googleAuthProvider, googleDriveProvider, db } from './firebase';
 import { signInWithPopup, onAuthStateChanged, User, signOut, GoogleAuthProvider } from 'firebase/auth';
 import { doc, setDoc, getDocFromServer, updateDoc } from 'firebase/firestore';
 import { handleFirestoreError, OperationType } from './lib/firestore';
@@ -117,7 +117,7 @@ export default function App() {
   const linkGoogleDrive = async () => {
     try {
       setBackupStatusMsg(null);
-      const result = await signInWithPopup(auth, googleProvider);
+      const result = await signInWithPopup(auth, googleDriveProvider);
       const credential = GoogleAuthProvider.credentialFromResult(result);
       if (credential?.accessToken) {
         setGoogleAccessToken(credential.accessToken);
@@ -953,14 +953,15 @@ export default function App() {
 
 
 
-  const handleDeductToken = () => {
-    if (userProfile && userProfile.tier !== 'pro' && userProfile.diagnosticTokens > 0) {
-      const newTokens = userProfile.diagnosticTokens - 1;
-      setUserProfile(prev => prev ? { ...prev, diagnosticTokens: newTokens } : null);
-      if (user) {
-        updateDoc(doc(db, 'users', user.uid), { diagnosticTokens: newTokens }).catch(console.error);
-      }
+  const handleDeductToken = async (): Promise<boolean> => {
+    if (!userProfile || userProfile.tier === 'pro') return true; // Pro users always pass
+    if (userProfile.diagnosticTokens <= 0) return false; // No tokens left
+    const newTokens = userProfile.diagnosticTokens - 1;
+    setUserProfile(prev => prev ? { ...prev, diagnosticTokens: newTokens } : null);
+    if (user) {
+      updateDoc(doc(db, 'users', user.uid), { diagnosticTokens: newTokens }).catch(console.error);
     }
+    return true;
   };
 
   const handleAIDiagnosis = async () => {
@@ -1008,7 +1009,7 @@ export default function App() {
   const handleLogin = async () => {
     try {
       setLoginError(null);
-      await signInWithPopup(auth, googleProvider);
+      await signInWithPopup(auth, googleAuthProvider);
     } catch (error: any) {
       console.error("Login failed", error);
       if (error?.code === 'auth/cancelled-popup-request' || error?.code === 'auth/popup-blocked' || error?.message?.includes('INTERNAL ASSERTION FAILED') || error?.message?.includes('popup-blocked')) {

@@ -70,7 +70,10 @@ export default function OBDTab({
   googleAccessToken,
   onLinkDrive,
   totalMileage,
-  vehicleModel
+  vehicleModel,
+  userProfile,
+  onShowSubscription,
+  onDeductToken
 }: OBDTabProps) {
   const [localDiagnosis, setLocalDiagnosis] = useState<string | null>(null);
   const [localIsAnalyzing, setLocalIsAnalyzing] = useState(false);
@@ -268,7 +271,7 @@ ${diagnosis}
   const status = getStatusConfig();
 
   const handleDiagnosis = async () => {
-    if (userProfile && userProfile.tier !== "pro" && userProfile.tokens <= 0) {
+    if (userProfile && userProfile.tier !== "pro" && userProfile.diagnosticTokens <= 0) {
       onShowSubscription?.();
       return;
     }
